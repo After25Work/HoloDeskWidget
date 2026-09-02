@@ -500,8 +500,11 @@ class LayeredWidget:
             x, y = item["x"], item["y"]
             name, slug, _, _ = self.targets[item["index"]]
             state = self.states[name]
-            color = (colors["live"] if state == "live"
-                     else colors["error"] if state == "error" else colors["muted"])
+            if self.live_only:
+                color = colors["text"]
+            else:
+                color = (colors["live"] if state == "live"
+                         else colors["error"] if state == "error" else colors["muted"])
             bullet = "● " if state == "live" else "! " if state == "error" else "• "
             display_name = name if self.lang == "ja" else english_name(slug)
             label = bullet + display_name
@@ -513,7 +516,11 @@ class LayeredWidget:
             max_label_width = label_area_w - 12
             fitted_label, label_font = self._fit_label(label, base_label_size, min_label_size,
                                                         max_label_width)
-            draw.text((x, y), fitted_label, font=label_font,
+            # Vertically centered within the row (rather than drawn flush to
+            # its top) so the name lines up with the now-playing ticker text,
+            # which draw_ticker centers within the same row_height.
+            name_y = self.vcenter_y(label_font, fitted_label, y, y + row_height)
+            draw.text((x, name_y), fitted_label, font=label_font,
                       fill=self.text_color(color), stroke_width=2,
                       stroke_fill=self.text_color(colors["label_stroke"]))
             if title:
