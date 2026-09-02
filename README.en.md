@@ -4,6 +4,8 @@ English | [日本語](README.md)
 
 A Windows desktop widget that keeps the live-stream status of hololive talents visible at all times.
 
+> **Disclaimer**: This is an unofficial, fan-made project created by an individual. It is not affiliated with, endorsed by, or associated with hololive, hololive production, or COVER Corp. in any way.
+
 ## Structure
 
 - `start_widget_native.py` — launch entry point (checks for duplicate instances → runs the `holowidget` widget's mainloop)

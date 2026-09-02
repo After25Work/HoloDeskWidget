@@ -4,6 +4,8 @@
 
 hololive所属タレントの配信状況を常時表示するWindowsデスクトップウィジェット。
 
+> **注意**: 本プロジェクトは個人が制作した非公式のファンメイドツールです。hololive、hololive production、カバー株式会社とは一切関係がなく、公式の許諾を受けたものでもありません。
+
 ## 構成
 
 - `start_widget_native.py` — 起動エントリポイント(多重起動チェック→`holowidget`のウィジェットをmainloop実行)
