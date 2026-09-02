@@ -3,7 +3,8 @@ __pycache__/
 *.pid
 *.log
 *.log.dependency
-/build/
+/build/*
+!/build/HoloDesk Widget.spec
 /dist/
 /release/
 settings.json

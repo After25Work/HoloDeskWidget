@@ -21,16 +21,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 
 
-def replace_once(path: Path, old: str, new: str) -> None:
-    text = path.read_text(encoding="utf-8")
+def stage_replacement(pending: dict[Path, str], path: Path, old: str, new: str) -> None:
+    text = pending.get(path)
+    if text is None:
+        text = path.read_text(encoding="utf-8")
     count = text.count(old)
     if count != 1:
         raise SystemExit(
             f"[FAIL] Expected exactly 1 match of {old!r} in {path}, found {count}. "
-            "Aborting without writing -- check the file manually."
+            "Aborting without writing any file -- check the file manually."
         )
-    path.write_text(text.replace(old, new, 1), encoding="utf-8")
-    print(f"[OK] {path.relative_to(ROOT)}")
+    pending[path] = text.replace(old, new, 1)
 
 
 def main() -> None:
@@ -40,28 +41,38 @@ def main() -> None:
     if old == new:
         raise SystemExit(f"[FAIL] old and new version are both {old!r} -- nothing to do.")
 
-    replace_once(ROOT / "holowidget" / "version.py",
-                 f'__version__ = "{old}"', f'__version__ = "{new}"')
+    # Every replacement is validated and staged in memory first; nothing is
+    # written to disk until all 7 replacements across all 5 files succeed,
+    # so a failure partway through never leaves the version strings
+    # out of sync on disk.
+    pending: dict[Path, str] = {}
 
-    replace_once(ROOT / "README.md",
-                 f"現在のバージョン: **{old}**", f"現在のバージョン: **{new}**")
+    stage_replacement(pending, ROOT / "holowidget" / "version.py",
+                       f'__version__ = "{old}"', f'__version__ = "{new}"')
 
-    replace_once(ROOT / "README.en.md",
-                 f"Current version: **{old}**", f"Current version: **{new}**")
+    stage_replacement(pending, ROOT / "README.md",
+                       f"現在のバージョン: **{old}**", f"現在のバージョン: **{new}**")
 
-    replace_once(ROOT / "docs" / "Readme.html",
-                 f'<p class="subtitle">バージョン {old}</p>',
-                 f'<p class="subtitle">バージョン {new}</p>')
-    replace_once(ROOT / "docs" / "Readme.html",
-                 f'<footer>HoloDeskWidget v{old}</footer>',
-                 f'<footer>HoloDeskWidget v{new}</footer>')
+    stage_replacement(pending, ROOT / "README.en.md",
+                       f"Current version: **{old}**", f"Current version: **{new}**")
 
-    replace_once(ROOT / "docs" / "Readme.en.html",
-                 f'<p class="subtitle">Version {old}</p>',
-                 f'<p class="subtitle">Version {new}</p>')
-    replace_once(ROOT / "docs" / "Readme.en.html",
-                 f'<footer>HoloDeskWidget v{old}</footer>',
-                 f'<footer>HoloDeskWidget v{new}</footer>')
+    stage_replacement(pending, ROOT / "docs" / "Readme.html",
+                       f'<p class="subtitle">バージョン {old}</p>',
+                       f'<p class="subtitle">バージョン {new}</p>')
+    stage_replacement(pending, ROOT / "docs" / "Readme.html",
+                       f'<footer>HoloDeskWidget v{old}</footer>',
+                       f'<footer>HoloDeskWidget v{new}</footer>')
+
+    stage_replacement(pending, ROOT / "docs" / "Readme.en.html",
+                       f'<p class="subtitle">Version {old}</p>',
+                       f'<p class="subtitle">Version {new}</p>')
+    stage_replacement(pending, ROOT / "docs" / "Readme.en.html",
+                       f'<footer>HoloDeskWidget v{old}</footer>',
+                       f'<footer>HoloDeskWidget v{new}</footer>')
+
+    for path, text in pending.items():
+        path.write_text(text, encoding="utf-8")
+        print(f"[OK] {path.relative_to(ROOT)}")
 
     print(f"\nVersion bumped: {old} -> {new} (5 files, 7 replacements)")
 

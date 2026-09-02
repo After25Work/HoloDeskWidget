@@ -54,7 +54,18 @@ set "STAGE=%ROOT%release\HoloDeskWidget-v%VERSION%"
 set "ZIP=%ROOT%release\HoloDeskWidget-v%VERSION%.zip"
 
 if exist "%STAGE%" rmdir /s /q "%STAGE%"
-mkdir "%STAGE%" 2>nul
+if exist "%STAGE%" (
+    echo [ERROR] Could not remove stale staging folder: "%STAGE%"
+    echo Close any program that has a file open inside it and try again.
+    pause
+    exit /b 1
+)
+mkdir "%STAGE%"
+if errorlevel 1 (
+    echo [ERROR] Failed to create staging folder: "%STAGE%"
+    pause
+    exit /b 1
+)
 if exist "%ZIP%" del /q "%ZIP%"
 
 rem Ship only what a user needs at runtime: the exe (which anchors config
