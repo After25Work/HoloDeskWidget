@@ -1,5 +1,6 @@
 import json
 import re
+import threading
 from urllib.error import HTTPError
 from urllib.parse import quote_plus
 from urllib.request import Request, urlopen
@@ -56,19 +57,10 @@ _CLIENT_VERSION = "2.20240101.00.00"
 # itself retries at up to `timeout` each — a much shorter timeout still
 # comfortably covers it, and keeps a slow/uncached first-time lookup (only
 # handle-style channel_urls need this; see _resolve_channel_id()) from
-# adding as much to the worst-case refresh latency.
+# adding as much to the worst-case refresh latency. Used as a cap via
+# min(timeout, _RESOLVE_TIMEOUT) so a caller-supplied timeout shorter than
+# this is still honored.
 _RESOLVE_TIMEOUT = 10
-
-
-class ChannelNotFoundError(HTTPError):
-    """Raised when the browse endpoint answers 200 OK with an "alerts" ERROR
-    banner (e.g. a stale/bad browseId) instead of failing the HTTP request
-    itself. Subclasses HTTPError, with the same .code == 404, so it's caught
-    by check_one()'s existing `except HTTPError` / re-resolve-and-retry path
-    in widget.py without that code needing to know about this module's
-    internals — but it's a distinct, named type here rather than a bare
-    HTTPError, so this cause stays distinguishable from an actual transport
-    404 if the two ever need to diverge (e.g. different retry/backoff)."""
 
 
 def fetch_live_info(channel_url, timeout=20):
@@ -85,7 +77,7 @@ def fetch_live_info(channel_url, timeout=20):
     # channel's "Live" tab, fetched through the same internal JSON endpoint
     # the web client itself calls to render that tab, isn't subject to that
     # gate and carries an explicit LIVE badge on the current broadcast.
-    channel_id = _resolve_channel_id(channel_url)
+    channel_id = _resolve_channel_id(channel_url, timeout)
     url = f"https://www.youtube.com/youtubei/v1/browse?key={_INNERTUBE_KEY}"
     payload = {
         "context": {"client": {"clientName": "WEB", "clientVersion": _CLIENT_VERSION}},
@@ -121,7 +113,7 @@ def fetch_live_info(channel_url, timeout=20):
             # no-op that fails identically forever instead of actually
             # re-fetching a fresh id.
             _invalidate_channel_id(channel_url)
-            raise ChannelNotFoundError(url, 404, "channel not found", None, None)
+            raise HTTPError(url, 404, "channel not found", None, None)
         if "contents" in data:
             break
         # A syntactically valid response that's simply missing the expected
@@ -133,25 +125,34 @@ def fetch_live_info(channel_url, timeout=20):
 
 def _has_error_alert(data):
     return any(
-        alert.get("alertRenderer", {}).get("type") == "ERROR"
-        # data.get("alerts", []) alone isn't enough: that default only
+        # `data.get("alerts", [])` alone isn't enough: that default only
         # applies when the key is absent, and this endpoint can send an
         # explicit "alerts": null, which would make `for alert in None`
-        # raise TypeError instead of just finding no ERROR alert.
+        # raise TypeError instead of just finding no ERROR alert. Individual
+        # entries can likewise be null, so guard each one the same way rather
+        # than letting `alert.get(...)` raise AttributeError.
+        (alert or {}).get("alertRenderer", {}).get("type") == "ERROR"
         for alert in (data.get("alerts") or [])
     )
 
 
 _channel_id_cache = {}
+# Guards _channel_id_cache: check_one() in widget.py runs one daemon thread
+# per talent, and if two talents ever share a channel_url (e.g. a collab
+# channel), concurrent first-time lookups would otherwise both miss the
+# cache and race on the same read-fetch-write sequence below.
+_channel_id_cache_lock = threading.Lock()
 
 
 def _invalidate_channel_id(channel_url):
-    _channel_id_cache.pop(channel_url, None)
+    with _channel_id_cache_lock:
+        _channel_id_cache.pop(channel_url, None)
 
 
-def _resolve_channel_id(channel_url):
-    if channel_url in _channel_id_cache:
-        return _channel_id_cache[channel_url]
+def _resolve_channel_id(channel_url, timeout=_RESOLVE_TIMEOUT):
+    with _channel_id_cache_lock:
+        if channel_url in _channel_id_cache:
+            return _channel_id_cache[channel_url]
     match = re.search(r"/channel/(UC[\w-]+)", channel_url)
     if match:
         channel_id = match.group(1)
@@ -164,7 +165,7 @@ def _resolve_channel_id(channel_url):
         # — forever, doubling steady-state request volume for no benefit.
         # A failed lookup (raises ValueError below) is never cached, so
         # it's retried on the next refresh instead of getting stuck failing.
-        html = _get(channel_url, _RESOLVE_TIMEOUT)
+        html = _get(channel_url, min(timeout, _RESOLVE_TIMEOUT))
         # "externalId" (the page's own channel metadata) is unique per page
         # and always identifies the channel being viewed. "channelId"
         # appears many times over — featured/related-channel shelves, other
@@ -179,7 +180,8 @@ def _resolve_channel_id(channel_url):
         if not match:
             raise ValueError(f"Could not resolve channel id for {channel_url}")
         channel_id = match.group(1)
-    _channel_id_cache[channel_url] = channel_id
+    with _channel_id_cache_lock:
+        _channel_id_cache[channel_url] = channel_id
     return channel_id
 
 
@@ -206,11 +208,14 @@ def _parse_live_tab(data):
             lockup = item.get("richItemRenderer", {}).get("content", {}).get("lockupViewModel")
             if not lockup:
                 continue
-            overlays = lockup.get("contentImage", {}).get("thumbnailViewModel", {}).get("overlays", [])
+            content_image = lockup.get("contentImage") or {}
+            thumbnail_view_model = content_image.get("thumbnailViewModel") or {}
+            overlays = thumbnail_view_model.get("overlays") or []
             is_live = any(
-                badge.get("thumbnailBadgeViewModel", {}).get("badgeStyle") == "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE"
+                (badge or {}).get("thumbnailBadgeViewModel", {}).get("badgeStyle")
+                == "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE"
                 for overlay in overlays
-                for badge in overlay.get("thumbnailBottomOverlayViewModel", {}).get("badges", [])
+                for badge in (overlay or {}).get("thumbnailBottomOverlayViewModel", {}).get("badges", [])
             )
             if not is_live:
                 continue

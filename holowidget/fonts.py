@@ -44,13 +44,7 @@ def font(size, bold=True):
     # startup — Japanese glyphs won't render, but a degraded UI beats a
     # hard failure the caller (widget.py draws through this everywhere) has
     # no way to work around.
-    try:
-        return ImageFont.load_default(size=size)
-    except TypeError:
-        # Pillow < 10.1 doesn't accept a `size` kwarg here (requirements.txt
-        # asks for >=10.1, but nothing enforces that floor at launch, so an
-        # older Pillow already installed system-wide can still reach this).
-        return ImageFont.load_default()
+    return ImageFont.load_default(size=size)
 
 
 @functools.lru_cache(maxsize=None)

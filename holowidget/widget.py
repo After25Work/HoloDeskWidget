@@ -1387,10 +1387,10 @@ class LayeredWidget:
                 video_id, title = youtube.fetch_live_info(target)
             except HTTPError as error:
                 # code == 404 here covers both a real transport 404 and
-                # youtube.ChannelNotFoundError (a real HTTPError subclass
-                # fetch_live_info() raises when the browse API answers 200 OK
-                # with an "alerts" ERROR banner instead) — both mean the same
-                # thing to this retry: re-resolve the channel and try once more.
+                # fetch_live_info() synthesizing one when the browse API
+                # answers 200 OK with an "alerts" ERROR banner instead (a
+                # stale/bad browseId) — both mean the same thing to this
+                # retry: re-resolve the channel and try once more.
                 if error.code != 404:
                     raise
                 try:

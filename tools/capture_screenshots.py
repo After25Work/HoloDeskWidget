@@ -40,7 +40,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from holowidget.layout import top_button_rects  # noqa: E402
-from holowidget.paths import WINDOW_TITLE  # noqa: E402
+from holowidget.paths import SW_RESTORE, WINDOW_TITLE  # noqa: E402
 
 OUT_DIR = ROOT / "docs" / "screenshots"
 LAUNCH_SCRIPT = ROOT / "start_widget_native.py"
@@ -67,7 +67,6 @@ user32.mouse_event.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
 user32.keybd_event.argtypes = [ctypes.c_ubyte, ctypes.c_ubyte, wintypes.DWORD, ctypes.c_void_p]
 user32.SystemParametersInfoW.argtypes = [wintypes.UINT, wintypes.UINT, wintypes.LPCWSTR, wintypes.UINT]
 
-SW_RESTORE = 9
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
 MOUSEEVENTF_RIGHTDOWN = 0x0008
@@ -144,10 +143,11 @@ class frozen_desktop:
 
     The widget cuts its rounded corners out with real color-key
     transparency, so the real desktop shows through there. A live/animated
-    wallpaper would bleed into every shot and flicker across the ~45 frames
-    grabbed back to back for the ticker GIF, so this pins the desktop to one
-    flat color for the duration of the capture and always restores whatever
-    was there before, even if capture fails partway through.
+    wallpaper would bleed into every shot and flicker across the
+    GIF_FRAME_COUNT frames grabbed back to back for the ticker GIF, so this
+    pins the desktop to one flat color for the duration of the capture and
+    always restores whatever was there before, even if capture fails
+    partway through.
     """
 
     COLOR = (18, 18, 24)
