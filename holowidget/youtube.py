@@ -126,28 +126,31 @@ def _parse_live_tab(data):
             if tab.get("tabRenderer", {}).get("title") == "Live"
         )
         items = live_tab["content"]["richGridRenderer"]["contents"]
-        if not items:
-            return None, None
-        # The first item is the channel's most recent broadcast — live, upcoming,
-        # or already ended. Only a LIVE-styled thumbnail badge means it's
-        # actually broadcasting right now; a scheduled stream gets a different
+        # The channel's most recent broadcasts — live, upcoming, or already
+        # ended — in some YouTube-chosen order that isn't reliably "live
+        # first": a pinned recurring "free chat" premiere can sit at index 0
+        # as "Upcoming" while the actual live broadcast is further down. So
+        # scan for the first entry with a LIVE-styled thumbnail badge rather
+        # than assuming items[0] is it; a scheduled stream gets a different
         # ("Upcoming") badge style instead.
-        lockup = items[0].get("richItemRenderer", {}).get("content", {}).get("lockupViewModel")
-        if not lockup:
-            return None, None
-        overlays = lockup.get("contentImage", {}).get("thumbnailViewModel", {}).get("overlays", [])
-        is_live = any(
-            badge.get("thumbnailBadgeViewModel", {}).get("badgeStyle") == "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE"
-            for overlay in overlays
-            for badge in overlay.get("thumbnailBottomOverlayViewModel", {}).get("badges", [])
-        )
-        if not is_live:
-            return None, None
-        title = (lockup.get("metadata", {})
-                 .get("lockupMetadataViewModel", {})
-                 .get("title", {})
-                 .get("content"))
-        return lockup.get("contentId"), title
+        for item in items:
+            lockup = item.get("richItemRenderer", {}).get("content", {}).get("lockupViewModel")
+            if not lockup:
+                continue
+            overlays = lockup.get("contentImage", {}).get("thumbnailViewModel", {}).get("overlays", [])
+            is_live = any(
+                badge.get("thumbnailBadgeViewModel", {}).get("badgeStyle") == "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE"
+                for overlay in overlays
+                for badge in overlay.get("thumbnailBottomOverlayViewModel", {}).get("badges", [])
+            )
+            if not is_live:
+                continue
+            title = (lockup.get("metadata", {})
+                     .get("lockupMetadataViewModel", {})
+                     .get("title", {})
+                     .get("content"))
+            return lockup.get("contentId"), title
+        return None, None
     except (KeyError, TypeError, StopIteration, AttributeError):
         # Any nested lookup above can come back missing, or present but
         # explicitly null, for a response shape this parser doesn't
