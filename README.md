@@ -20,6 +20,7 @@ hololive所属タレントの配信状況を常時表示するWindowsデスク�
 - `talents.json` — 表示対象タレントの一覧（名前・ユニット・スラッグ・既知のチャンネルURL）
 - `start_widget.bat` — ネイティブ版の起動ランチャー
 - `build_widget.bat` — PyInstallerで`dist/HoloDesk Widget.exe`をビルド
+- `find_python.bat` — `start_widget.bat`/`build_widget.bat`共通のPython検出スクリプト
 - `release_widget.bat` — ビルド＋配布用zip(`release/HoloDeskWidget-v<version>.zip`)の作成
 - `docs/Readme.html` / `docs/Readme.en.html` — エンドユーザー向け使い方ガイド(リリースzipに同梱)
 

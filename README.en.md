@@ -20,6 +20,7 @@ A Windows desktop widget that keeps the live-stream status of hololive talents v
 - `talents.json` — list of talents to display (name, unit, slug, known channel URL)
 - `start_widget.bat` — launcher for the native version
 - `build_widget.bat` — builds `dist/HoloDesk Widget.exe` with PyInstaller
+- `find_python.bat` — shared Python-detection script used by `start_widget.bat`/`build_widget.bat`
 - `release_widget.bat` — builds and packages the distributable zip (`release/HoloDeskWidget-v<version>.zip`)
 - `docs/Readme.html` / `docs/Readme.en.html` — end-user usage guides (bundled into the release zip)
 
