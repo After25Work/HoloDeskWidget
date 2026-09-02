@@ -3,6 +3,7 @@ __pycache__/
 *.pid
 *.log
 *.log.dependency
-build/
-dist/
+/build/
+/dist/
+/release/
 settings.json

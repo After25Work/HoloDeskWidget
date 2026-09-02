@@ -34,6 +34,12 @@ start_widget.bat
 
 `start_widget.bat` はPythonインストール先の自動検出、`pythonw.exe`の存在確認、Pillowの導入チェックを行った上でウィジェットを起動します。エラー発生時は `start_widget.log` を確認してください。
 
+## バージョン
+
+現在のバージョン: **1.0.0**
+
+`holowidget/version.py` の `__version__` が唯一の管理箇所です(ウィジェットの右クリックメニューにも表示されます)。リリース時はこの値を手動で更新してください。`release_widget.bat` はこの値を読み取り、`release/HoloDeskWidget-v<version>.zip` という名前で成果物を作成します。
+
 ## タレント一覧の更新
 
 `talents.json` に `{"name": "...", "unit": "...", "slug": "...", "channel_url": "..."}` の形式でエントリを追加/編集します。`channel_url` は既知のチャンネルURLが分かっている場合のみ指定し、未指定の場合は起動時にhololive公式サイトのタレントページからチャンネルを自動解決します。
