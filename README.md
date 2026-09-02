@@ -6,6 +6,35 @@ hololive所属タレントの配信状況を常時表示するWindowsデスク�
 
 > **注意**: 本プロジェクトは個人が制作した非公式のファンメイドツールです。hololive、hololive production、カバー株式会社とは一切関係がなく、公式の許諾を受けたものでもありません。
 
+## 機能
+
+- **配信状況の一覧表示**: 登録タレントの状態(配信中/待機中/取得エラー)を色分けカードで表示。カードのタレント名部分・配信タイトル部分はそれぞれクリックでクリップボードにコピーできます。
+- **常時前面表示できる半透明ウィジェット**: デスクトップに常駐する透過ウィンドウ。背景部分のドラッグで移動、端・角のドラッグでサイズ変更ができます。
+- **LIVEフィルタ**: 配信中のタレントだけに絞り込んで表示し、配信タイトルをティッカー(横スクロール)表示します。
+- **世界時計**: JST/WIB/UTC/EST/PSTの現在時刻をあわせて表示します。
+- **表示のカスタマイズ**: 最前面固定・ダークモード/ライトモード切替・テーマカラー(配色パレット)選択・表示言語(日本語/英語)切替を右上のボタンまたは右クリックメニューから操作できます。背景の透過度と文字サイズはスライダーで調整できます。
+- **設定の自動保存**: ウィンドウ位置・サイズ・言語・テーマなどの個人設定は`settings.json`に自動保存され、次回起動時に復元されます。
+- **チャンネル自動解決**: 起動時にhololive公式サイトのタレントページからYouTubeチャンネルを自動解決し、失敗した場合のみ`talents.json`の`channel_url`にフォールバックします。
+
+## スクリーンショット
+
+<p align="center">
+  <img src="docs/screenshots/main.png" width="320" alt="メイン画面">
+  <img src="docs/screenshots/context_menu.png" width="320" alt="右クリックメニュー">
+</p>
+
+左: タレントごとに配信状況を色分け表示するメイン画面。右: 右クリックメニューから最前面固定・LIVEフィルタ・ダークモード・言語・テーマカラー切り替えなどを操作できます(右上のボタン列からも同じ操作が可能です)。
+
+<p align="center">
+  <img src="docs/screenshots/buttons.png" alt="右上のボタン">
+</p>
+
+LIVEフィルタ使用時は、配信中のタレントに絞り込んだ上で配信タイトルがティッカー表示されます。
+
+<p align="center">
+  <img src="docs/screenshots/live_ticker.gif" width="320" alt="LIVEフィルタのティッカー表示">
+</p>
+
 ## 動作環境
 
 - **OS**: Windows専用(Win32レイヤードウィンドウ・`ctypes`/`windll`・Win32ミューテックスに依存しており、Windows以外では動作しません)。Windows 10 / 11での動作を想定しています。
@@ -33,6 +62,8 @@ hololive所属タレントの配信状況を常時表示するWindowsデスク�
 - `find_python.bat` — `start_widget.bat`/`build_widget.bat`共通のPython検出スクリプト
 - `release_widget.bat` — ビルド＋配布用zip(`release/HoloDeskWidget-v<version>.zip`)の作成
 - `docs/Readme.html` / `docs/Readme.en.html` — エンドユーザー向け使い方ガイド(リリースzipに同梱)
+- `docs/screenshots/` — 上記ガイドに埋め込むスクリーンショット・GIF
+- `tools/capture_screenshots.py` / `capture_screenshots.bat` — `docs/screenshots/`内の画像・GIFを実際のウィジェットを操作して再撮影する開発者向けツール
 
 ## セットアップ
 

@@ -6,6 +6,35 @@ A Windows desktop widget that keeps the live-stream status of hololive talents v
 
 > **Disclaimer**: This is an unofficial, fan-made project created by an individual. It is not affiliated with, endorsed by, or associated with hololive, hololive production, or COVER Corp. in any way.
 
+## Features
+
+- **Live-status overview**: Shows each registered talent's status (live / idle / fetch error) as color-coded cards. Clicking a card copies the talent's name, and clicking the stream title copies the title, to the clipboard.
+- **Always-on-top, semi-transparent desktop widget**: A persistent, transparent window you can drag by its background to move, and drag by its edges/corners to resize.
+- **LIVE filter**: Narrows the list down to only the talents currently live, and shows their stream titles as a scrolling ticker.
+- **World clock**: Displays the current time in JST/WIB/UTC/EST/PST alongside the talent list.
+- **Display customization**: Toggle always-on-top, dark/light mode, theme color (palette), and display language (Japanese/English) from the top-right buttons or the right-click menu. Background opacity and text size are adjustable via sliders.
+- **Settings persistence**: Window position/size, language, theme, and other personal settings are saved automatically to `settings.json` and restored on the next launch.
+- **Automatic channel resolution**: On startup, resolves each talent's YouTube channel from the hololive official site's talent page, falling back to `channel_url` in `talents.json` only if that resolution fails.
+
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/main_en.png" width="320" alt="Main view">
+  <img src="docs/screenshots/context_menu_en.png" width="320" alt="Right-click menu">
+</p>
+
+Left: the main view, showing each talent's live status as color-coded cards. Right: the right-click menu, which offers the same always-on-top / LIVE filter / dark mode / language / theme color toggles as the top-right button row.
+
+<p align="center">
+  <img src="docs/screenshots/buttons_en.png" alt="Top-right buttons">
+</p>
+
+With the LIVE filter enabled, the list narrows to talents currently live and their stream titles scroll by as a ticker.
+
+<p align="center">
+  <img src="docs/screenshots/live_ticker.gif" width="320" alt="LIVE filter ticker">
+</p>
+
 ## System requirements
 
 - **OS**: Windows only (relies on Win32 layered windows, `ctypes`/`windll`, and a Win32 mutex — it will not run on other platforms). Targeted at Windows 10 / 11.
@@ -33,6 +62,8 @@ A Windows desktop widget that keeps the live-stream status of hololive talents v
 - `find_python.bat` — shared Python-detection script used by `start_widget.bat`/`build_widget.bat`
 - `release_widget.bat` — builds and packages the distributable zip (`release/HoloDeskWidget-v<version>.zip`)
 - `docs/Readme.html` / `docs/Readme.en.html` — end-user usage guides (bundled into the release zip)
+- `docs/screenshots/` — screenshots/GIF embedded in the guides above
+- `tools/capture_screenshots.py` / `capture_screenshots.bat` — developer tool that drives the running widget to re-capture the images/GIF in `docs/screenshots/`
 
 ## Setup
 
