@@ -70,3 +70,7 @@ Add or edit entries in `talents.json` using the format `{"name": "...", "unit": 
 ## Notes
 
 Live status is determined via YouTube's internal API (innertube), which fetches the channel's "Live" tab — an unofficial method. It may stop working if YouTube changes this API.
+
+## License
+
+[MIT License](LICENSE). This license covers the source code only; it does not grant any rights to third-party trademarks or names such as "hololive", "hololive production", or individual talent names.

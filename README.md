@@ -70,3 +70,7 @@ start_widget.bat
 ## 注意
 
 配信中判定はYouTubeの内部API(innertube)経由でチャンネルの「Live」タブを取得して行っており、非公式な方法です。YouTube側の仕様変更で動作しなくなる可能性があります。
+
+## ライセンス
+
+[MIT License](LICENSE)。ただし本ライセンスはソースコードにのみ適用され、「hololive」「hololive production」および各タレント名などの第三者の商標・名称の権利を許諾するものではありません。
