@@ -1,13 +1,13 @@
 ---
 name: release
-description: Build and package a HoloDeskWidget release zip (HoloDesk Widget.exe + talents.json + Readme.html + Readme.en.html) for this repository. Use this whenever the user asks to release, ship, package, or build a distributable/production build of the widget, cut a new version, bump the version number, or wants the release_widget.bat / build_widget.bat scripts run. Also trigger on Japanese phrasing like "リリース", "パッケージ化", "配布用ビルド", "バージョンを上げる". This is specific to the HoloDeskWidget project and keeps the version number in sync across all four files that hardcode it.
+description: Build and package a HoloDeskWidget release zip (HoloDesk Widget.exe + talents.json + Readme.html + Readme.en.html) for this repository. Use this whenever the user asks to release, ship, package, or build a distributable/production build of the widget, cut a new version, bump the version number, or wants the release_widget.bat / build_widget.bat scripts run. Also trigger on Japanese phrasing like "リリース", "パッケージ化", "配布用ビルド", "バージョンを上げる". This is specific to the HoloDeskWidget project and keeps the version number in sync across all five files that hardcode it.
 ---
 
 # HoloDeskWidget release
 
 Produces `release/HoloDeskWidget-v<version>.zip`, the artifact users download and
 unzip to run the app. This skill exists because the version number is
-hardcoded as literal text in four places (only one of which is actually read
+hardcoded as literal text in five places (only one of which is actually read
 by the running app), and it's easy to update one and forget the rest.
 
 ## Where the version lives
@@ -16,6 +16,7 @@ by the running app), and it's easy to update one and forget the rest.
 |---|---|
 | `holowidget/version.py` | `__version__ = "x.y.z"` — the only one read at runtime (shown in the app's right-click menu) |
 | `README.md` | `現在のバージョン: **x.y.z**` |
+| `README.en.md` | `Current version: **x.y.z**` |
 | `docs/Readme.html` | `<p class="subtitle">バージョン x.y.z</p>` and `<footer>HoloDeskWidget vx.y.z</footer>` |
 | `docs/Readme.en.html` | `<p class="subtitle">Version x.y.z</p>` and `<footer>HoloDeskWidget vx.y.z</footer>` |
 
@@ -42,7 +43,7 @@ targeted string replacement and asserts each match is unique before writing.
    ```bash
    python .claude/skills/release/scripts/bump_version.py <old_version> <new_version>
    ```
-   This touches all 4 files in one atomic-ish pass and fails loudly (no
+   This touches all 5 files in one atomic-ish pass and fails loudly (no
    partial write) if any expected string isn't found exactly once — that
    usually means the version was already bumped, or one of the files was
    hand-edited and drifted from the expected format. If it fails, open just
@@ -80,10 +81,11 @@ targeted string replacement and asserts each match is unique before writing.
 
 - **No git operations.** It never commits, tags, or pushes. `build/`,
   `dist/`, and `release/` are all gitignored — they're disposable build
-  output, not repo content. `holowidget/version.py`, `README.md`, and the
-  two `docs/Readme*.html` files *do* change on disk (tracked files), so
-  after a successful release, tell the user those 4 files changed and ask
-  whether they want them committed — do not commit automatically.
+  output, not repo content. `holowidget/version.py`, `README.md`,
+  `README.en.md`, and the two `docs/Readme*.html` files *do* change on disk
+  (tracked files), so after a successful release, tell the user those 5
+  files changed and ask whether they want them committed — do not commit
+  automatically.
 - **No automatic version-number guessing without telling the user what you
   picked.** State the old → new version explicitly before running the
   build so a misread intent (patch vs. minor) is caught before it's baked

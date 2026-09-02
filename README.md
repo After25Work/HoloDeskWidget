@@ -1,5 +1,7 @@
 # HoloDeskWidget
 
+[English](README.en.md) | 日本語
+
 hololive所属タレントの配信状況を常時表示するWindowsデスクトップウィジェット。
 
 ## 構成
@@ -17,6 +19,9 @@ hololive所属タレントの配信状況を常時表示するWindowsデスク�
   - `version.py` — バージョン番号(右クリックメニューに表示)
 - `talents.json` — 表示対象タレントの一覧（名前・ユニット・スラッグ・既知のチャンネルURL）
 - `start_widget.bat` — ネイティブ版の起動ランチャー
+- `build_widget.bat` — PyInstallerで`dist/HoloDesk Widget.exe`をビルド
+- `release_widget.bat` — ビルド＋配布用zip(`release/HoloDeskWidget-v<version>.zip`)の作成
+- `docs/Readme.html` / `docs/Readme.en.html` — エンドユーザー向け使い方ガイド(リリースzipに同梱)
 
 ## セットアップ
 
@@ -38,7 +43,16 @@ start_widget.bat
 
 現在のバージョン: **1.0.0**
 
-`holowidget/version.py` の `__version__` が唯一の管理箇所です(ウィジェットの右クリックメニューにも表示されます)。リリース時はこの値を手動で更新してください。`release_widget.bat` はこの値を読み取り、`release/HoloDeskWidget-v<version>.zip` という名前で成果物を作成します。
+`holowidget/version.py` の `__version__` が唯一の管理箇所です(ウィジェットの右クリックメニューにも表示されます)。リリース時はこの値を手動で更新してください。`release_widget.bat` はこの値を読み取り、`build_widget.bat`(PyInstaller)でexeをビルドした上で、exe・`talents.json`・`docs/Readme*.html` をまとめた `release/HoloDeskWidget-v<version>.zip` を作成します。
+
+## リリース手順
+
+1. バージョンを上げる場合は `holowidget/version.py` の `__version__` を更新し、`README.md` の `現在のバージョン: **x.y.z**`、`README.en.md` の `Current version: **x.y.z**`、`docs/Readme.html` / `docs/Readme.en.html` に埋め込まれた同じバージョン文字列も合わせて更新します。5箇所まとめて更新するには以下を使用します。
+   ```bash
+   python .claude/skills/release/scripts/bump_version.py <old_version> <new_version>
+   ```
+2. `release_widget.bat` を実行します。内部で `build_widget.bat`(PyInstaller、要インストール)を呼び出して `dist/HoloDesk Widget.exe` をビルドし、exe・`talents.json`・`docs/Readme.html`・`docs/Readme.en.html` の4点を `release/HoloDeskWidget-v<version>.zip` にまとめます(`settings.json`やログなどの実行時生成ファイルは含まれません)。
+3. 生成された `release/HoloDeskWidget-v<version>.zip` を配布します。`build/`・`dist/`・`release/` はgit管理対象外です。
 
 ## タレント一覧の更新
 

@@ -1,7 +1,7 @@
 """Sync the app version across every file that hardcodes it.
 
 holowidget/version.py is the single source of truth (it's the only place
-read at runtime, for the right-click menu). The other three files embed the
+read at runtime, for the right-click menu). The other four files embed the
 same string as static text for humans, so nothing keeps them in sync
 automatically -- this script does that by targeted, asserted string
 replacement instead of a blind find-and-replace, since docs/Readme*.html
@@ -46,6 +46,9 @@ def main() -> None:
     replace_once(ROOT / "README.md",
                  f"現在のバージョン: **{old}**", f"現在のバージョン: **{new}**")
 
+    replace_once(ROOT / "README.en.md",
+                 f"Current version: **{old}**", f"Current version: **{new}**")
+
     replace_once(ROOT / "docs" / "Readme.html",
                  f'<p class="subtitle">バージョン {old}</p>',
                  f'<p class="subtitle">バージョン {new}</p>')
@@ -60,7 +63,7 @@ def main() -> None:
                  f'<footer>HoloDeskWidget v{old}</footer>',
                  f'<footer>HoloDeskWidget v{new}</footer>')
 
-    print(f"\nVersion bumped: {old} -> {new} (4 files, 6 replacements)")
+    print(f"\nVersion bumped: {old} -> {new} (5 files, 7 replacements)")
 
 
 if __name__ == "__main__":
