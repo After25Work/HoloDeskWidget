@@ -6,6 +6,14 @@ A Windows desktop widget that keeps the live-stream status of hololive talents v
 
 > **Disclaimer**: This is an unofficial, fan-made project created by an individual. It is not affiliated with, endorsed by, or associated with hololive, hololive production, or COVER Corp. in any way.
 
+## System requirements
+
+- **OS**: Windows only (relies on Win32 layered windows, `ctypes`/`windll`, and a Win32 mutex — it will not run on other platforms). Targeted at Windows 10 / 11.
+- **Internet connection**: Required (used for channel auto-resolution from the hololive official site and for fetching live status via YouTube's innertube API).
+- **Using the release exe**: No extra setup needed — it's a self-contained executable built with PyInstaller.
+- **Running from the development environment**: Requires Python 3.10+, the dependencies in `requirements.txt` (`Pillow>=10.1,<12`), and the standard-library `tkinter` (Tcl/Tk), which is bundled with the python.org installer.
+- **Fonts**: Japanese text uses Yu Gothic (falling back to Meiryo, then MS Gothic), and emoji use Segoe UI Emoji. These ship with Windows by default, but may be missing on installs without East Asian language support added, in which case text may not render correctly.
+
 ## Structure
 
 - `start_widget_native.py` — launch entry point (checks for duplicate instances → runs the `holowidget` widget's mainloop)
