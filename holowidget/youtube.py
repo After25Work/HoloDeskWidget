@@ -22,71 +22,97 @@ def resolve_channel_url(slug):
     return f"https://www.youtube.com/channel/{channels[0]}"
 
 
+# Public web-client API key embedded in every youtube.com page's ytcfg (not a
+# secret credential) — needed to call the same internal "browse" endpoint the
+# site's own web client uses to render a channel's Live tab.
+_INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
+# Opaque protobuf selecting a channel's "Live" tab; same constant the web
+# client sends when a viewer clicks that tab.
+_LIVE_TAB_PARAMS = "EgdzdHJlYW1z8gYECgJ6AA%3D%3D"
+
+
 def fetch_live_video_id(channel_url, timeout=20):
-    # Raises HTTPError/OSError/UnicodeError on failure so the caller can tell
-    # "couldn't check" (e.g. a 404 worth retrying against a re-resolved
-    # channel) apart from "checked, and it's not live" (returns None).
+    # Raises HTTPError/OSError/UnicodeError/ValueError on failure so the
+    # caller can tell "couldn't check" apart from "checked, and it's not
+    # live" (returns None).
     return fetch_live_info(channel_url, timeout)[0]
 
 
-def fetch_live_info(channel_url, timeout=20, attempts=2):
+def fetch_live_info(channel_url, timeout=20):
     # Same failure semantics as fetch_live_video_id(), plus the stream's
     # current title (for the live-only view's ticker) when one is live.
     #
-    # YouTube intermittently answers /live with a client-hydration "shell"
-    # page instead of the normal server-rendered watch page: it carries a
-    # <link rel="canonical" href="undefined"> and omits the actual player
-    # data, so there's nothing to find even when the channel is live. A
-    # same-process retry lands on the normal rendered page far more often
-    # than not, so retry once before concluding "not live" from a response
-    # that never had the data to begin with.
-    html = None
-    for attempt in range(max(attempts, 1)):
-        request = Request(channel_url.rstrip("/") + "/live", headers={"User-Agent": "Mozilla/5.0"})
-        with urlopen(request, timeout=timeout) as response:
-            html = response.read().decode("utf-8", errors="ignore")
-        if not re.search(r'<link rel="canonical" href="undefined"', html):
-            break
-    return _parse_live_info(html)
+    # This used to scrape /live's server-rendered HTML for playabilityStatus,
+    # but YouTube now answers that page for high-traffic live streams with a
+    # "Sign in to confirm you're not a bot" LOGIN_REQUIRED interstitial
+    # instead of the real player data — silently misreporting an actually
+    # live channel as offline (it's a 200 OK with no error to catch). The
+    # channel's "Live" tab, fetched through the same internal JSON endpoint
+    # the web client itself calls to render that tab, isn't subject to that
+    # gate and carries an explicit LIVE badge on the current broadcast.
+    channel_id = _resolve_channel_id(channel_url, timeout)
+    body = json.dumps({
+        "context": {"client": {"clientName": "WEB", "clientVersion": "2.20240101.00.00"}},
+        "browseId": channel_id,
+        "params": _LIVE_TAB_PARAMS,
+    }).encode("utf-8")
+    request = Request(
+        f"https://www.youtube.com/youtubei/v1/browse?key={_INNERTUBE_KEY}",
+        data=body,
+        headers={"User-Agent": "Mozilla/5.0", "Content-Type": "application/json"},
+    )
+    with urlopen(request, timeout=timeout) as response:
+        data = json.loads(response.read().decode("utf-8", errors="ignore"))
+    return _parse_live_tab(data)
 
 
-def _parse_live_info(html):
-    # videoDetails.isLive is where this used to be read from, but current
-    # /live responses often omit it entirely (or bury it deep past a
-    # multi-KB shortDescription, well outside any reasonable search window)
-    # while still including it truthfully for waiting-room "premieres in
-    # N seconds" pages, which aren't actually live yet. playabilityStatus.
-    # status is the one field that reliably distinguishes "playing right
-    # now" (OK) from "scheduled/ended" (LIVE_STREAM_OFFLINE) in every
-    # response shape observed, and it sits right before videoDetails.
-    status = re.search(r'"playabilityStatus"\s*:\s*\{\s*"status"\s*:\s*"OK"', html)
-    if not status:
+def _resolve_channel_id(channel_url, timeout):
+    match = re.search(r"/channel/(UC[\w-]+)", channel_url)
+    if match:
+        return match.group(1)
+    # A handle-style URL (e.g. .../@hololive) has no UC id in it, so fetch
+    # the channel page once to read it out of the embedded page data.
+    request = Request(channel_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(request, timeout=timeout) as response:
+        html = response.read().decode("utf-8", errors="ignore")
+    match = re.search(r'"(?:channelId|externalId)"\s*:\s*"(UC[\w-]+)"', html)
+    if not match:
+        raise ValueError(f"Could not resolve channel id for {channel_url}")
+    return match.group(1)
+
+
+def _parse_live_tab(data):
+    try:
+        tabs = data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"]
+        live_tab = next(
+            tab["tabRenderer"] for tab in tabs
+            if tab.get("tabRenderer", {}).get("title") == "Live"
+        )
+        items = live_tab["content"]["richGridRenderer"]["contents"]
+    except (KeyError, TypeError, StopIteration):
         return None, None
-    video = re.search(r'"videoId"\s*:\s*"([\w-]{6,})"', html[status.start():status.start() + 2_000])
-    if not video:
+    if not items:
         return None, None
-    # The video's title lives in videoDetails, but that can sit well past
-    # streamingData's adaptiveFormats list — dozens of googlevideo.com URLs,
-    # easily 50KB+ for a live stream — so search forward for videoDetails
-    # itself rather than assuming a fixed-size window reaches it.
-    title = None
-    details = re.search(r'"videoDetails"\s*:\s*\{', html[status.end():])
-    if details:
-        window_start = status.end() + details.start()
-        details_window = html[window_start:window_start + 20_000]
-        # status == "OK" alone doesn't distinguish a live broadcast from an
-        # ordinary playable video (e.g. /live can keep pointing at a stream's
-        # own watch page for a while after it ends, which is "OK" too). When
-        # videoDetails explicitly says isLive: false, trust that over status.
-        if re.search(r'"isLive"\s*:\s*false', details_window):
-            return None, None
-        title_match = re.search(r'"title"\s*:\s*"((?:[^"\\]|\\.)*)"', details_window)
-        if title_match:
-            try:
-                title = json.loads(f'"{title_match.group(1)}"')
-            except ValueError:
-                title = None
-    return video.group(1), title
+    # The first item is the channel's most recent broadcast — live, upcoming,
+    # or already ended. Only a LIVE-styled thumbnail badge means it's
+    # actually broadcasting right now; a scheduled stream gets a different
+    # ("Upcoming") badge style instead.
+    lockup = items[0].get("richItemRenderer", {}).get("content", {}).get("lockupViewModel")
+    if not lockup:
+        return None, None
+    overlays = lockup.get("contentImage", {}).get("thumbnailViewModel", {}).get("overlays", [])
+    is_live = any(
+        badge.get("thumbnailBadgeViewModel", {}).get("badgeStyle") == "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE"
+        for overlay in overlays
+        for badge in overlay.get("thumbnailBottomOverlayViewModel", {}).get("badges", [])
+    )
+    if not is_live:
+        return None, None
+    title = (lockup.get("metadata", {})
+             .get("lockupMetadataViewModel", {})
+             .get("title", {})
+             .get("content"))
+    return lockup.get("contentId"), title
 
 
 def resolve_watch_page_url(channel_url, timeout=5):
