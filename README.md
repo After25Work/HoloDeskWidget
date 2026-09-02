@@ -34,11 +34,17 @@ pip install -r requirements.txt
 
 ## 起動
 
+### 開発環境から起動
+
 ```bash
 start_widget.bat
 ```
 
 `start_widget.bat` はPythonインストール先の自動検出、`pythonw.exe`の存在確認、Pillowの導入チェックを行った上でウィジェットを起動します。エラー発生時は `start_widget.log` を確認してください。
+
+### 配布版(リリースzip)から起動
+
+`release/HoloDeskWidget-v<version>.zip` を展開し、`HoloDesk Widget.exe` をダブルクリックするだけで起動します。Pythonのインストールなど事前準備は不要です。初回起動時にWindows SmartScreenの警告が出る場合は「詳細情報」→「実行」を選んでください(署名されていない実行ファイルのための一般的な警告です)。
 
 ## バージョン
 

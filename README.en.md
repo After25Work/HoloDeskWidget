@@ -34,11 +34,17 @@ pip install -r requirements.txt
 
 ## Launching
 
+### From the development environment
+
 ```bash
 start_widget.bat
 ```
 
 `start_widget.bat` auto-detects the Python installation, checks that `pythonw.exe` exists, verifies Pillow is installed, and then launches the widget. If an error occurs, check `start_widget.log`.
+
+### From the distributed release zip
+
+Extract `release/HoloDeskWidget-v<version>.zip` and double-click `HoloDesk Widget.exe` to launch it. No Python installation or other setup is required. If Windows SmartScreen shows a warning on first launch, choose "More info" → "Run anyway" (this is expected for an unsigned executable).
 
 ## Version
 
