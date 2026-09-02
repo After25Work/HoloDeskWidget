@@ -40,6 +40,7 @@ echo Building "HoloDesk Widget.exe" (version %VERSION%)...
 call "%ROOT%build_widget.bat"
 if errorlevel 1 (
     echo [ERROR] Build failed; aborting release.
+    pause
     exit /b 1
 )
 

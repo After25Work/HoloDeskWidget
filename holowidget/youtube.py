@@ -1,4 +1,3 @@
-import functools
 import json
 import re
 from urllib.error import HTTPError
@@ -8,16 +7,19 @@ from urllib.request import Request, urlopen
 _HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 
+def _open(url, timeout, data=None, extra_headers=None):
+    request = Request(url, data=data, headers={**_HEADERS, **(extra_headers or {})})
+    return urlopen(request, timeout=timeout)
+
+
 def _get(url, timeout):
-    request = Request(url, headers=_HEADERS)
-    with urlopen(request, timeout=timeout) as response:
+    with _open(url, timeout) as response:
         return response.read().decode("utf-8", errors="ignore")
 
 
 def _post_json(url, payload, timeout):
     body = json.dumps(payload).encode("utf-8")
-    request = Request(url, data=body, headers={**_HEADERS, "Content-Type": "application/json"})
-    with urlopen(request, timeout=timeout) as response:
+    with _open(url, timeout, data=body, extra_headers={"Content-Type": "application/json"}) as response:
         return json.loads(response.read().decode("utf-8", errors="ignore"))
 
 
@@ -58,6 +60,17 @@ _CLIENT_VERSION = "2.20240101.00.00"
 _RESOLVE_TIMEOUT = 10
 
 
+class ChannelNotFoundError(HTTPError):
+    """Raised when the browse endpoint answers 200 OK with an "alerts" ERROR
+    banner (e.g. a stale/bad browseId) instead of failing the HTTP request
+    itself. Subclasses HTTPError, with the same .code == 404, so it's caught
+    by check_one()'s existing `except HTTPError` / re-resolve-and-retry path
+    in widget.py without that code needing to know about this module's
+    internals — but it's a distinct, named type here rather than a bare
+    HTTPError, so this cause stays distinguishable from an actual transport
+    404 if the two ever need to diverge (e.g. different retry/backoff)."""
+
+
 def fetch_live_info(channel_url, timeout=20):
     # Raises HTTPError/OSError/UnicodeError/ValueError on failure so the
     # caller can tell "couldn't check" apart from "checked, and it's not
@@ -72,7 +85,7 @@ def fetch_live_info(channel_url, timeout=20):
     # channel's "Live" tab, fetched through the same internal JSON endpoint
     # the web client itself calls to render that tab, isn't subject to that
     # gate and carries an explicit LIVE badge on the current broadcast.
-    channel_id = _resolve_channel_id(channel_url, _RESOLVE_TIMEOUT)
+    channel_id = _resolve_channel_id(channel_url)
     url = f"https://www.youtube.com/youtubei/v1/browse?key={_INNERTUBE_KEY}"
     payload = {
         "context": {"client": {"clientName": "WEB", "clientVersion": _CLIENT_VERSION}},
@@ -100,8 +113,15 @@ def fetch_live_info(channel_url, timeout=20):
             # /live scrape which 404'd directly. Synthesize the same 404
             # check_one() in widget.py already re-resolves-and-retries on,
             # so that recovery path still fires instead of the channel
-            # silently reading as "offline" forever.
-            raise HTTPError(url, 404, "channel not found", None, None)
+            # silently reading as "offline" forever. Also evict the cached
+            # channel_id for this channel_url: without this, check_one()'s
+            # retry re-resolves the same channel_url (stable for handle-based
+            # talents, the common case) and _resolve_channel_id() would just
+            # hand back the same bad id from cache, making that retry a
+            # no-op that fails identically forever instead of actually
+            # re-fetching a fresh id.
+            _invalidate_channel_id(channel_url)
+            raise ChannelNotFoundError(url, 404, "channel not found", None, None)
         if "contents" in data:
             break
         # A syntactically valid response that's simply missing the expected
@@ -114,37 +134,53 @@ def fetch_live_info(channel_url, timeout=20):
 def _has_error_alert(data):
     return any(
         alert.get("alertRenderer", {}).get("type") == "ERROR"
-        for alert in data.get("alerts", [])
+        # data.get("alerts", []) alone isn't enough: that default only
+        # applies when the key is absent, and this endpoint can send an
+        # explicit "alerts": null, which would make `for alert in None`
+        # raise TypeError instead of just finding no ERROR alert.
+        for alert in (data.get("alerts") or [])
     )
 
 
-@functools.lru_cache(maxsize=None)
-def _resolve_channel_id(channel_url, timeout):
+_channel_id_cache = {}
+
+
+def _invalidate_channel_id(channel_url):
+    _channel_id_cache.pop(channel_url, None)
+
+
+def _resolve_channel_id(channel_url):
+    if channel_url in _channel_id_cache:
+        return _channel_id_cache[channel_url]
     match = re.search(r"/channel/(UC[\w-]+)", channel_url)
     if match:
-        return match.group(1)
-    # A handle-style URL (e.g. .../@hololive) has no UC id in it, so fetch
-    # the channel page once to read it out of the embedded page data. Cached
-    # (see the decorator) since a channel's id never changes: without this,
-    # every 60s refresh would re-fetch this page for every handle-based
-    # talent — the common case, see resolve_channel_url() — forever,
-    # doubling steady-state request volume for no benefit. A failed lookup
-    # (raises ValueError below) is never cached, so it's retried on the next
-    # refresh instead of getting stuck failing.
-    html = _get(channel_url, timeout)
-    # "externalId" (the page's own channel metadata) is unique per page and
-    # always identifies the channel being viewed. "channelId" appears many
-    # times over — featured/related-channel shelves, other members of the
-    # same unit, etc. — so searching for it first can latch onto some other
-    # channel entirely (e.g. a talent's page listing their group's shared
-    # channel before their own metadata block). Prefer externalId; only fall
-    # back to channelId if a page ever omits it.
-    match = re.search(r'"externalId"\s*:\s*"(UC[\w-]+)"', html)
-    if not match:
-        match = re.search(r'"channelId"\s*:\s*"(UC[\w-]+)"', html)
-    if not match:
-        raise ValueError(f"Could not resolve channel id for {channel_url}")
-    return match.group(1)
+        channel_id = match.group(1)
+    else:
+        # A handle-style URL (e.g. .../@hololive) has no UC id in it, so
+        # fetch the channel page once to read it out of the embedded page
+        # data. Cached below since a channel's id never changes: without
+        # this, every 60s refresh would re-fetch this page for every
+        # handle-based talent — the common case, see resolve_channel_url()
+        # — forever, doubling steady-state request volume for no benefit.
+        # A failed lookup (raises ValueError below) is never cached, so
+        # it's retried on the next refresh instead of getting stuck failing.
+        html = _get(channel_url, _RESOLVE_TIMEOUT)
+        # "externalId" (the page's own channel metadata) is unique per page
+        # and always identifies the channel being viewed. "channelId"
+        # appears many times over — featured/related-channel shelves, other
+        # members of the same unit, etc. — so searching for it first can
+        # latch onto some other channel entirely (e.g. a talent's page
+        # listing their group's shared channel before their own metadata
+        # block). Prefer externalId; only fall back to channelId if a page
+        # ever omits it.
+        match = re.search(r'"externalId"\s*:\s*"(UC[\w-]+)"', html)
+        if not match:
+            match = re.search(r'"channelId"\s*:\s*"(UC[\w-]+)"', html)
+        if not match:
+            raise ValueError(f"Could not resolve channel id for {channel_url}")
+        channel_id = match.group(1)
+    _channel_id_cache[channel_url] = channel_id
+    return channel_id
 
 
 def _parse_live_tab(data):
@@ -178,10 +214,16 @@ def _parse_live_tab(data):
             )
             if not is_live:
                 continue
-            title = (lockup.get("metadata", {})
-                     .get("lockupMetadataViewModel", {})
-                     .get("title", {})
-                     .get("content"))
+            # `.get(key, {})` only falls back to {} when the key is absent —
+            # any of these can also be explicitly null, which would make the
+            # next .get() in the chain raise AttributeError. Use `or {}`
+            # instead so a null anywhere in this chain degrades to title =
+            # None rather than raising into the broad except below, which
+            # would otherwise wipe out the is_live result already confirmed
+            # above just because of a missing/null title field.
+            metadata = lockup.get("metadata") or {}
+            title_obj = (metadata.get("lockupMetadataViewModel") or {}).get("title") or {}
+            title = title_obj.get("content")
             return lockup.get("contentId"), title
         return None, None
     except (KeyError, TypeError, StopIteration, AttributeError):
@@ -196,10 +238,9 @@ def resolve_watch_page_url(channel_url, timeout=5):
     # Follows a channel's /live redirect to the concrete watch-page URL it
     # currently points at (live or not) — used to open the "closest" link
     # available when a cached live URL isn't on hand yet. Needs the response
-    # object itself (for geturl()), not just its body, so this doesn't go
-    # through _get().
-    request = Request(channel_url.rstrip("/") + "/live", headers=_HEADERS)
-    with urlopen(request, timeout=timeout) as response:
+    # object itself (for geturl()), not just its decoded body, so this uses
+    # _open() directly instead of _get().
+    with _open(channel_url.rstrip("/") + "/live", timeout) as response:
         return response.geturl().removesuffix("/live")
 
 

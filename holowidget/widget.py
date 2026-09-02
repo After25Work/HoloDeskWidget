@@ -660,7 +660,12 @@ class LayeredWidget:
         draw.text((x, y), text, font=fnt, fill=fill)
 
     @staticmethod
+    @functools.lru_cache(maxsize=256)
     def vcenter_y(fnt, text, top, bottom):
+        # Cached like _fit_label() below: called again for every row on every
+        # ~60ms ticker tick even when the row's font/text/bounds haven't
+        # changed since the last frame, which used to repeat this getbbox()
+        # call for nothing on every single tick.
         bbox = fnt.getbbox(text)
         return top + ((bottom - top) - (bbox[3] - bbox[1])) // 2 - bbox[1]
 
@@ -1381,6 +1386,11 @@ class LayeredWidget:
             try:
                 video_id, title = youtube.fetch_live_info(target)
             except HTTPError as error:
+                # code == 404 here covers both a real transport 404 and
+                # youtube.ChannelNotFoundError (a real HTTPError subclass
+                # fetch_live_info() raises when the browse API answers 200 OK
+                # with an "alerts" ERROR banner instead) — both mean the same
+                # thing to this retry: re-resolve the channel and try once more.
                 if error.code != 404:
                     raise
                 try:
