@@ -63,8 +63,8 @@ Current version: **1.0.0**
 
 ## Updating the talent list
 
-Add or edit entries in `talents.json` using the format `{"name": "...", "unit": "...", "slug": "...", "channel_url": "..."}`. Specify `channel_url` only when the channel URL is already known; if omitted, the channel is resolved automatically from the hololive official site's talent page at startup.
+Add or edit entries in `talents.json` using the format `{"name": "...", "unit": "...", "slug": "...", "channel_url": "..."}`. At startup the widget always tries to resolve the channel from the hololive official site's talent page first, and falls back to `channel_url` (or `https://www.youtube.com/@<slug>` if omitted) only when that resolution fails. Setting `channel_url` explicitly helps for talents where auto-resolution tends to fail (e.g. graduated talents whose hololivepro page no longer links a channel).
 
 ## Notes
 
-Live status is determined by polling YouTube's `/live` page, which is unofficial scraping. It may stop working if YouTube changes its page structure.
+Live status is determined via YouTube's internal API (innertube), which fetches the channel's "Live" tab — an unofficial method. It may stop working if YouTube changes this API.

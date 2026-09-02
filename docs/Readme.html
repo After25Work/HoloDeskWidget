@@ -174,13 +174,13 @@
   <div class="card">
     <p>実行ファイルと同じフォルダにある <code>talents.json</code> を編集すると、表示するタレントを追加・変更できます。</p>
     <pre style="white-space:pre-wrap; color:var(--muted); font-size:13px;">{ "name": "名前", "unit": "ユニット名", "slug": "スラッグ", "channel_url": "https://www.youtube.com/..." }</pre>
-    <p class="muted"><code>channel_url</code> は既知のチャンネルURLが分かっている場合のみ指定してください。省略した場合、起動時にhololive公式サイトから自動的にチャンネルを解決します。編集後はウィジェットを再起動するか、右クリックメニューの「更新」を使ってください。</p>
+    <p class="muted">起動時は常にhololive公式サイトのタレントページからチャンネルの自動解決を試み、失敗したときだけ<code>channel_url</code>(未指定の場合は<code>https://www.youtube.com/@&lt;slug&gt;</code>)にフォールバックします。自動解決が失敗しやすいタレント(卒業済みなど)では<code>channel_url</code>を指定しておくと安定します。編集後はウィジェットを再起動するか、右クリックメニューの「更新」を使ってください。</p>
   </div>
 
   <h2>注意事項</h2>
   <div class="card warn">
     <ul>
-      <li>配信中判定はYouTubeの <code>/live</code> ページを定期的に確認する非公式な方法のため、YouTube側の仕様変更で一時的に動作しなくなる場合があります。</li>
+      <li>配信中判定はYouTubeの内部API(innertube)経由でチャンネルの「Live」タブを取得する非公式な方法のため、YouTube側の仕様変更で一時的に動作しなくなる場合があります。</li>
       <li>インターネット接続が必要です。</li>
       <li>ウィンドウの位置やサイズなどの個人設定は、実行ファイルと同じフォルダの <code>settings.json</code> に自動保存されます。</li>
     </ul>

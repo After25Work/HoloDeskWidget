@@ -174,13 +174,13 @@
   <div class="card">
     <p>Edit <code>talents.json</code>, located in the same folder as the executable, to add or change which talents are shown.</p>
     <pre style="white-space:pre-wrap; color:var(--muted); font-size:13px;">{ "name": "Name", "unit": "Unit name", "slug": "slug", "channel_url": "https://www.youtube.com/..." }</pre>
-    <p class="muted">Only set <code>channel_url</code> if you already know the channel's URL. If omitted, the widget resolves the channel automatically from the official hololive talent page on startup. After editing, restart the widget or use "Refresh" in the right-click menu.</p>
+    <p class="muted">At startup the widget always tries to resolve the channel from the official hololive talent page first, and only falls back to <code>channel_url</code> (or <code>https://www.youtube.com/@&lt;slug&gt;</code> if omitted) when that fails. Setting <code>channel_url</code> explicitly helps for talents where auto-resolution tends to fail (e.g. graduated talents). After editing, restart the widget or use "Refresh" in the right-click menu.</p>
   </div>
 
   <h2>Notes</h2>
   <div class="card warn">
     <ul>
-      <li>Live-status detection works by periodically checking YouTube's <code>/live</code> page &mdash; an unofficial method that may stop working temporarily if YouTube changes its page structure.</li>
+      <li>Live-status detection works by querying YouTube's internal API (innertube) for the channel's "Live" tab &mdash; an unofficial method that may stop working temporarily if YouTube changes this API.</li>
       <li>An internet connection is required.</li>
       <li>Personal settings such as window position and size are saved automatically to <code>settings.json</code>, in the same folder as the executable.</li>
     </ul>
