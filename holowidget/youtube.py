@@ -103,7 +103,16 @@ def _resolve_channel_id(channel_url, timeout):
     # (raises ValueError below) is never cached, so it's retried on the next
     # refresh instead of getting stuck failing.
     html = _get(channel_url, timeout)
-    match = re.search(r'"(?:channelId|externalId)"\s*:\s*"(UC[\w-]+)"', html)
+    # "externalId" (the page's own channel metadata) is unique per page and
+    # always identifies the channel being viewed. "channelId" appears many
+    # times over — featured/related-channel shelves, other members of the
+    # same unit, etc. — so searching for it first can latch onto some other
+    # channel entirely (e.g. a talent's page listing their group's shared
+    # channel before their own metadata block). Prefer externalId; only fall
+    # back to channelId if a page ever omits it.
+    match = re.search(r'"externalId"\s*:\s*"(UC[\w-]+)"', html)
+    if not match:
+        match = re.search(r'"channelId"\s*:\s*"(UC[\w-]+)"', html)
     if not match:
         raise ValueError(f"Could not resolve channel id for {channel_url}")
     return match.group(1)
