@@ -500,17 +500,16 @@ class LayeredWidget:
             x, y = item["x"], item["y"]
             name, slug, _, _ = self.targets[item["index"]]
             state = self.states[name]
-            color = (colors["live"] if state == "live"
+            # Every row in the live-only view is already live
+            # (build_grid_layout() only includes state=="live" rows there),
+            # so repeating the "live" highlight on every single row adds no
+            # information there — plain text color reads better. Guarded on
+            # state=="live" explicitly (not just self.live_only) so this
+            # can't silently mis-color a row if that filter's behavior ever
+            # changes.
+            color = (colors["text"] if self.live_only and state == "live"
+                     else colors["live"] if state == "live"
                      else colors["error"] if state == "error" else colors["muted"])
-            if self.live_only and state == "live":
-                # Every row in this view is already live (build_grid_layout()
-                # only includes state=="live" rows here), so repeating the
-                # "live" highlight on every single row adds no information —
-                # plain text color reads better. Guarded on state=="live"
-                # explicitly (not just self.live_only) so this can't
-                # silently mis-color a row if that filter's behavior ever
-                # changes.
-                color = colors["text"]
             bullet = "● " if state == "live" else "! " if state == "error" else "• "
             display_name = name if self.lang == "ja" else english_name(slug)
             label = bullet + display_name

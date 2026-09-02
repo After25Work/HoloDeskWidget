@@ -42,13 +42,20 @@ def resolve_channel_url(slug):
 _INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
 # Opaque protobuf selecting a channel's "Live" tab; same constant the web
 # client sends when a viewer clicks that tab.
-_LIVE_TAB_PARAMS = "EgdzdHJlYW1z8gYECgJ6AA%3D%3D"
+_LIVE_TAB_PARAMS = "EgdzdHJlYW1z8gYECgJ6AA=="
 # YouTube periodically stops honoring innertube requests tagged with an old
 # enough client version. If fetch_live_info() starts failing, or silently
 # returning no live data for every channel, check this first: open
 # youtube.com, view page source, search for "INNERTUBE_CONTEXT_CLIENT_VERSION"
 # and paste in the current value.
 _CLIENT_VERSION = "2.20240101.00.00"
+# The channel-id lookup is a single lightweight page fetch (read one id out
+# of embedded page data), not the heavier browse call fetch_live_info()
+# itself retries at up to `timeout` each — a much shorter timeout still
+# comfortably covers it, and keeps a slow/uncached first-time lookup (only
+# handle-style channel_urls need this; see _resolve_channel_id()) from
+# adding as much to the worst-case refresh latency.
+_RESOLVE_TIMEOUT = 10
 
 
 def fetch_live_info(channel_url, timeout=20):
@@ -65,7 +72,7 @@ def fetch_live_info(channel_url, timeout=20):
     # channel's "Live" tab, fetched through the same internal JSON endpoint
     # the web client itself calls to render that tab, isn't subject to that
     # gate and carries an explicit LIVE badge on the current broadcast.
-    channel_id = _resolve_channel_id(channel_url, timeout)
+    channel_id = _resolve_channel_id(channel_url, _RESOLVE_TIMEOUT)
     url = f"https://www.youtube.com/youtubei/v1/browse?key={_INNERTUBE_KEY}"
     payload = {
         "context": {"client": {"clientName": "WEB", "clientVersion": _CLIENT_VERSION}},
@@ -80,13 +87,35 @@ def fetch_live_info(channel_url, timeout=20):
     for attempt in range(2):
         try:
             data = _post_json(url, payload, timeout)
-            break
         except HTTPError:
             raise
         except (OSError, ValueError):
             if attempt == 1:
                 raise
+            continue
+        if _has_error_alert(data):
+            # A bad/renamed browseId doesn't fail the HTTP request itself
+            # (this endpoint answers with 200 OK and an "alerts" ERROR
+            # banner, e.g. "This channel does not exist."), unlike the old
+            # /live scrape which 404'd directly. Synthesize the same 404
+            # check_one() in widget.py already re-resolves-and-retries on,
+            # so that recovery path still fires instead of the channel
+            # silently reading as "offline" forever.
+            raise HTTPError(url, 404, "channel not found", None, None)
+        if "contents" in data:
+            break
+        # A syntactically valid response that's simply missing the expected
+        # "contents" shape is this endpoint's analogue of the old /live
+        # scrape's client-hydration "shell" page — retry once against a
+        # fresh request rather than trusting it as "not live" outright.
     return _parse_live_tab(data)
+
+
+def _has_error_alert(data):
+    return any(
+        alert.get("alertRenderer", {}).get("type") == "ERROR"
+        for alert in data.get("alerts", [])
+    )
 
 
 @functools.lru_cache(maxsize=None)
@@ -121,9 +150,13 @@ def _resolve_channel_id(channel_url, timeout):
 def _parse_live_tab(data):
     try:
         tabs = data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"]
+        # Matched by "selected" (this is the one tab the request's `params`
+        # asked for) rather than title text: the client context here sends
+        # no explicit hl/gl, so the tab title isn't guaranteed to be the
+        # literal English string "Live" for every request.
         live_tab = next(
             tab["tabRenderer"] for tab in tabs
-            if tab.get("tabRenderer", {}).get("title") == "Live"
+            if tab.get("tabRenderer", {}).get("selected")
         )
         items = live_tab["content"]["richGridRenderer"]["contents"]
         # The channel's most recent broadcasts — live, upcoming, or already

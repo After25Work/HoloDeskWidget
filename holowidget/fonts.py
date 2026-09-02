@@ -29,7 +29,13 @@ def font(size, bold=True):
     # startup — Japanese glyphs won't render, but a degraded UI beats a
     # hard failure the caller (widget.py draws through this everywhere) has
     # no way to work around.
-    return ImageFont.load_default(size=size)
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        # Pillow < 10.1 doesn't accept a `size` kwarg here (requirements.txt
+        # asks for >=10.1, but nothing enforces that floor at launch, so an
+        # older Pillow already installed system-wide can still reach this).
+        return ImageFont.load_default()
 
 
 @functools.lru_cache(maxsize=None)
@@ -38,8 +44,7 @@ def emoji_font(size):
     # Emoji instead. It's a color bitmap font with fixed strike sizes;
     # FreeType scales to the nearest one and Pillow renders it via
     # ImageDraw.text(..., embedded_color=True).
-    path = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "seguiemj.ttf"
     try:
-        return ImageFont.truetype(str(path), size)
+        return ImageFont.truetype(str(_FONTS_DIR / "seguiemj.ttf"), size)
     except OSError:
         return None
