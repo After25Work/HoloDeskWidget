@@ -500,11 +500,17 @@ class LayeredWidget:
             x, y = item["x"], item["y"]
             name, slug, _, _ = self.targets[item["index"]]
             state = self.states[name]
-            if self.live_only:
+            color = (colors["live"] if state == "live"
+                     else colors["error"] if state == "error" else colors["muted"])
+            if self.live_only and state == "live":
+                # Every row in this view is already live (build_grid_layout()
+                # only includes state=="live" rows here), so repeating the
+                # "live" highlight on every single row adds no information —
+                # plain text color reads better. Guarded on state=="live"
+                # explicitly (not just self.live_only) so this can't
+                # silently mis-color a row if that filter's behavior ever
+                # changes.
                 color = colors["text"]
-            else:
-                color = (colors["live"] if state == "live"
-                         else colors["error"] if state == "error" else colors["muted"])
             bullet = "● " if state == "live" else "! " if state == "error" else "• "
             display_name = name if self.lang == "ja" else english_name(slug)
             label = bullet + display_name
@@ -1330,8 +1336,11 @@ class LayeredWidget:
             # Plain daemon threads instead of ThreadPoolExecutor: its worker
             # threads register with concurrent.futures' own atexit hook and
             # get joined before the interpreter is allowed to exit, so a
-            # single slow/hanging youtube.fetch_live_video_id() call (up to
-            # its 20s timeout) would keep the whole process — and the
+            # single slow/hanging youtube.fetch_live_info() call — which can
+            # stack multiple 20s-timeout network requests (channel-id
+            # resolution, an internal retry on the browse call, and this
+            # module's own 404 channel re-resolve path) well past a single
+            # 20s bound — would keep the whole process — and the
             # single-instance mutex it holds — alive well after the window
             # closes. Daemon threads are simply abandoned on exit instead.
             semaphore = threading.Semaphore(12)
