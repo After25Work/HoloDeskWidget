@@ -41,7 +41,7 @@ sys.path.insert(0, str(ROOT))
 
 from holowidget.layout import top_button_rects  # noqa: E402
 from holowidget.paths import WINDOW_TITLE  # noqa: E402
-from holowidget.single_instance import bring_to_front  # noqa: E402
+from holowidget.single_instance import bring_to_front, find_window  # noqa: E402
 
 OUT_DIR = ROOT / "docs" / "screenshots"
 LAUNCH_SCRIPT = ROOT / "start_widget_native.py"
@@ -56,8 +56,6 @@ GIF_FRAME_INTERVAL = 0.08
 # --- Win32 bindings (ctypes only, matching the app's own convention) ---
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 
-user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
-user32.FindWindowW.restype = wintypes.HWND
 user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
 user32.GetWindowRect.restype = wintypes.BOOL
 user32.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
@@ -80,16 +78,6 @@ SPIF_SENDCHANGE = 0x02
 # real system menu of this class, so it can be located and cropped precisely
 # instead of guessing how far the context-menu screenshot needs to extend.
 MENU_WINDOW_CLASS = "#32768"
-
-
-def find_window(name, timeout=10.0, by_class=False):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        hwnd = user32.FindWindowW(name, None) if by_class else user32.FindWindowW(None, name)
-        if hwnd:
-            return hwnd
-        time.sleep(0.2)
-    return None
 
 
 def get_window_rect(hwnd):
@@ -181,7 +169,7 @@ class frozen_desktop:
 # --- Capture steps ------------------------------------------------------
 
 def launch_or_attach():
-    hwnd = user32.FindWindowW(None, WINDOW_TITLE)
+    hwnd = find_window(WINDOW_TITLE, timeout=0)
     if not hwnd:
         print("HoloDeskWidget is not running -- launching it...")
         subprocess.Popen([sys.executable, str(LAUNCH_SCRIPT)], cwd=str(ROOT))
@@ -219,7 +207,7 @@ def capture_context_menu(hwnd, suffix):
     # sliders) so the generic menu opens rather than a talent's row menu.
     click_at(left + 60, top + 130, button="right")
     time.sleep(0.4)
-    menu_hwnd = find_window(MENU_WINDOW_CLASS, timeout=1.0, by_class=True)
+    menu_hwnd = find_window(class_name=MENU_WINDOW_CLASS, timeout=1.0)
     if menu_hwnd:
         ml, mt, mr, mb = get_window_rect(menu_hwnd)
         box = (min(left, ml), min(top, mt), max(right, mr), max(bottom, mb))

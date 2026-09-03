@@ -28,8 +28,11 @@ def _font_paths(bold):
     # still needs to try each in turn, since a candidate can exist on disk
     # but fail to actually load (corrupt/partial install), and only file
     # existence is checked here.
-    return [_FONTS_DIR / filename for filename in _FONT_CANDIDATES[bold]
-            if (_FONTS_DIR / filename).exists()]
+    # A tuple, not a list: lru_cache hands back this same object on every
+    # call for a given `bold`, and a mutable list would let a future caller
+    # that mutates its result (e.g. .pop()) permanently corrupt the cache.
+    return tuple(_FONTS_DIR / filename for filename in _FONT_CANDIDATES[bold]
+                 if (_FONTS_DIR / filename).exists())
 
 
 @functools.lru_cache(maxsize=None)

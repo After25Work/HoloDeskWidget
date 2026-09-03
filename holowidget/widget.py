@@ -1395,7 +1395,7 @@ class LayeredWidget:
                 # HTTPError(404) mean the same thing to this retry: re-resolve
                 # the channel and try once more. Any other HTTPError code is
                 # a real failure, not one this retry can do anything about.
-                if isinstance(error, HTTPError) and error.code != 404:
+                if not youtube.is_stale_channel_error(error):
                     raise
                 try:
                     target = youtube.resolve_channel_url(slug)
@@ -1420,7 +1420,9 @@ class LayeredWidget:
                     # refresh_worker()'s 12 concurrent slots for yet another
                     # full retry cycle on top of everything already tried.
                     video_id, title = youtube.fetch_live_info(target, attempts=1)
-                except (HTTPError, youtube.ChannelNotFoundError):
+                except (HTTPError, youtube.ChannelNotFoundError) as error:
+                    if not youtube.is_stale_channel_error(error):
+                        raise
                     # Same reasoning as the resolve_channel_url failure just
                     # above: a freshly re-resolved channel that still
                     # 404s/doesn't exist gets the same "keep last-known state,

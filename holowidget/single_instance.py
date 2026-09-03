@@ -40,6 +40,22 @@ def bring_to_front(hwnd):
     _user32.SetForegroundWindow(hwnd)
 
 
+def find_window(title=None, class_name=None, timeout=10.0, poll_interval=0.2):
+    """Poll FindWindowW for a window by title or class until it appears or
+    `timeout` elapses (timeout=0 checks once, no polling), returning None on
+    timeout. Shared with tools/capture_screenshots.py, which looks up both
+    the widget's own window (by title) and its native right-click menu (by
+    class) this same way."""
+    deadline = time.monotonic() + timeout
+    while True:
+        hwnd = _user32.FindWindowW(class_name, title)
+        if hwnd:
+            return hwnd
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(poll_interval)
+
+
 def ensure_single_instance():
     # A named Win32 mutex (not a lockfile) so a crashed process can't leave a
     # stale lock behind — the OS releases the mutex automatically. Call this
@@ -58,7 +74,7 @@ def ensure_single_instance():
     # for a live one.
     deadline = time.monotonic() + _RETRY_TIMEOUT_SECONDS
     while True:
-        hwnd = _user32.FindWindowW(None, WINDOW_TITLE)
+        hwnd = find_window(WINDOW_TITLE, timeout=0)
         if hwnd:
             bring_to_front(hwnd)
             raise SystemExit(0)

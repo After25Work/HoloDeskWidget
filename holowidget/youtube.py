@@ -82,6 +82,19 @@ class ChannelNotFoundError(Exception):
     HTTPError(404)."""
 
 
+def is_stale_channel_error(error):
+    """True when `error` means channel_url's browseId is stale/bad — a
+    ChannelNotFoundError, or a genuine transport HTTPError(404) — and the
+    caller should re-resolve the channel and retry. False for any other
+    HTTPError code, which is a real failure this retry can't do anything
+    about. Kept here (not duplicated at each call site) so check_one() in
+    widget.py's two retry points can't drift out of sync on what counts as
+    "stale"."""
+    return isinstance(error, ChannelNotFoundError) or (
+        isinstance(error, HTTPError) and error.code == 404
+    )
+
+
 def fetch_live_info(channel_url, timeout=20, attempts=2):
     # Raises HTTPError/ChannelNotFoundError/OSError/UnicodeError/ValueError on
     # failure so the caller can tell "couldn't check" apart from "checked,
@@ -154,6 +167,15 @@ def fetch_live_info(channel_url, timeout=20, attempts=2):
     return None, None
 
 
+def _safe_get(d, key):
+    # `d.get(key, {})` only falls back to {} when `key` is absent, not when
+    # it's present but explicitly null — and this endpoint's innertube JSON
+    # does both, at nearly every nesting level of every response this module
+    # parses. `(d or {}).get(key)` handles both, so every step of a lookup
+    # chain uses this instead of hand-rolling the same guard at each level.
+    return (d or {}).get(key)
+
+
 def _has_error_alert(data):
     return any(
         # `data.get("alerts", [])` alone isn't enough: that default only
@@ -161,10 +183,8 @@ def _has_error_alert(data):
         # explicit "alerts": null, which would make `for alert in None`
         # raise TypeError instead of just finding no ERROR alert. Individual
         # entries — and their "alertRenderer" field — can likewise be null,
-        # so guard each one with `or {}` rather than `.get(key, {})`, which
-        # only falls back to {} when the key is absent, not when it's
-        # explicitly null; the latter would still raise AttributeError here.
-        ((alert or {}).get("alertRenderer") or {}).get("type") == "ERROR"
+        # hence _safe_get() rather than a bare `.get(...)` at each step.
+        _safe_get(_safe_get(alert, "alertRenderer"), "type") == "ERROR"
         for alert in (data.get("alerts") or [])
     )
 
@@ -254,23 +274,21 @@ def _parse_live_tab(data):
             lockup = item.get("richItemRenderer", {}).get("content", {}).get("lockupViewModel")
             if not lockup:
                 continue
-            content_image = lockup.get("contentImage") or {}
-            thumbnail_view_model = content_image.get("thumbnailViewModel") or {}
-            overlays = thumbnail_view_model.get("overlays") or []
-            # `.get(key, {})` only falls back to {} when the key is absent —
-            # any of these can also be explicitly null, which would make the
-            # next .get() in the chain raise AttributeError. Use `or {}`
-            # (not `.get(key, {})`) at every step so a null anywhere in this
-            # chain just makes is_live False for that badge/overlay, instead
-            # of raising out of the whole `for item in items` loop below and
-            # into the broad except — which would abort scanning the rest of
-            # the items entirely and misreport the channel as not live even
-            # when a later item is the actual live broadcast.
+            content_image = _safe_get(lockup, "contentImage")
+            thumbnail_view_model = _safe_get(content_image, "thumbnailViewModel")
+            overlays = _safe_get(thumbnail_view_model, "overlays") or []
+            # _safe_get() at every step (see its definition above) so a null
+            # anywhere in this chain just makes is_live False for that
+            # badge/overlay, instead of raising out of the whole
+            # `for item in items` loop below and into the broad except —
+            # which would abort scanning the rest of the items entirely and
+            # misreport the channel as not live even when a later item is
+            # the actual live broadcast.
             is_live = any(
-                ((badge or {}).get("thumbnailBadgeViewModel") or {}).get("badgeStyle")
+                _safe_get(_safe_get(badge, "thumbnailBadgeViewModel"), "badgeStyle")
                 == "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE"
                 for overlay in overlays
-                for badge in ((overlay or {}).get("thumbnailBottomOverlayViewModel") or {}).get("badges") or []
+                for badge in _safe_get(_safe_get(overlay, "thumbnailBottomOverlayViewModel"), "badges") or []
             )
             if not is_live:
                 continue
@@ -281,14 +299,14 @@ def _parse_live_tab(data):
                 # live-badged and does carry one, rather than reporting this
                 # channel as not live just because this entry is incomplete.
                 continue
-            # Same null-vs-absent-key note as above: `or {}` rather than
-            # `.get(key, {})` so a null anywhere in this chain degrades to
-            # title = None rather than raising into the broad except below,
-            # which would otherwise wipe out the is_live result already
-            # confirmed above just because of a missing/null title field.
-            metadata = lockup.get("metadata") or {}
-            title_obj = (metadata.get("lockupMetadataViewModel") or {}).get("title") or {}
-            title = title_obj.get("content")
+            # Same null-vs-absent-key note as above: _safe_get() so a null
+            # anywhere in this chain degrades to title = None rather than
+            # raising into the broad except below, which would otherwise
+            # wipe out the is_live result already confirmed above just
+            # because of a missing/null title field.
+            metadata = _safe_get(lockup, "metadata")
+            title_obj = _safe_get(_safe_get(metadata, "lockupMetadataViewModel"), "title")
+            title = _safe_get(title_obj, "content")
             return content_id, title
         return None, None
     except (KeyError, TypeError, StopIteration, AttributeError):
