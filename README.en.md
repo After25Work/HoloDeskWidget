@@ -89,7 +89,7 @@ Extract `release/HoloDeskWidget-v<version>.zip` and double-click `HoloDesk Widge
 
 ## Version
 
-Current version: **1.0.0**
+Current version: **1.0.1**
 
 `__version__` in `holowidget/version.py` is the single source of truth (it is also shown in the widget's right-click menu). Update this value manually when releasing. `release_widget.bat` reads this value, builds the exe via `build_widget.bat` (PyInstaller), and packages the exe, `talents.json`, and `docs/Readme*.html` into `release/HoloDeskWidget-v<version>.zip`.
 

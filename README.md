@@ -89,7 +89,7 @@ start_widget.bat
 
 ## バージョン
 
-現在のバージョン: **1.0.0**
+現在のバージョン: **1.0.1**
 
 `holowidget/version.py` の `__version__` が唯一の管理箇所です(ウィジェットの右クリックメニューにも表示されます)。リリース時はこの値を手動で更新してください。`release_widget.bat` はこの値を読み取り、`build_widget.bat`(PyInstaller)でexeをビルドした上で、exe・`talents.json`・`docs/Readme*.html` をまとめた `release/HoloDeskWidget-v<version>.zip` を作成します。
 
