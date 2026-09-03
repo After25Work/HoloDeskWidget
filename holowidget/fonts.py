@@ -18,30 +18,33 @@ _FONT_CANDIDATES = {
 
 
 @functools.lru_cache(maxsize=None)
-def _font_path(bold):
+def _font_paths(bold):
     # Resolved once per bold value (there are only two) instead of inside
     # font(): font() is cached per (size, bold), and the UI's label auto-fit
     # search calls it with many distinct sizes, so without this a missing
     # Yu Gothic/Meiryo would have its candidate files re-probed via failed
     # ImageFont.truetype() OSErrors on every new size instead of just once.
-    for filename in _FONT_CANDIDATES[bold]:
-        path = _FONTS_DIR / filename
-        if path.exists():
-            return path
-    return None
+    # Returns every candidate that EXISTS, not just the first: font() below
+    # still needs to try each in turn, since a candidate can exist on disk
+    # but fail to actually load (corrupt/partial install), and only file
+    # existence is checked here.
+    return [_FONTS_DIR / filename for filename in _FONT_CANDIDATES[bold]
+            if (_FONTS_DIR / filename).exists()]
 
 
 @functools.lru_cache(maxsize=None)
 def font(size, bold=True):
-    path = _font_path(bold)
-    if path is not None:
+    for path in _font_paths(bold):
         try:
             return ImageFont.truetype(str(path), size)
         except OSError:
-            pass
-    # None of the known CJK-capable fonts are present. Fall back to Pillow's
-    # built-in font rather than letting the OSError propagate and crash
-    # startup — Japanese glyphs won't render, but a degraded UI beats a
+            # This candidate exists but doesn't actually load (corrupt or
+            # unsupported file) — try the next candidate in the fallback
+            # chain instead of jumping straight to the bitmap default below.
+            continue
+    # None of the known CJK-capable fonts are present or loadable. Fall back
+    # to Pillow's built-in font rather than letting the OSError propagate and
+    # crash startup — Japanese glyphs won't render, but a degraded UI beats a
     # hard failure the caller (widget.py draws through this everywhere) has
     # no way to work around.
     return ImageFont.load_default(size=size)

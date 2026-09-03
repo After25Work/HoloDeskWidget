@@ -656,7 +656,10 @@ class LayeredWidget:
         left, top, right, bottom = rect
         bbox = fnt.getbbox(text)
         x = left + ((right - left) - (bbox[2] - bbox[0])) // 2 - bbox[0]
-        y = top + ((bottom - top) - (bbox[3] - bbox[1])) // 2 - bbox[1]
+        # Shares its y-centering math with vcenter_y() below rather than
+        # duplicating the formula, so a future tweak to one can't silently
+        # drift out of alignment with the other.
+        y = LayeredWidget.vcenter_y(fnt, text, top, bottom)
         draw.text((x, y), text, font=fnt, fill=fill)
 
     @staticmethod
@@ -1385,30 +1388,45 @@ class LayeredWidget:
             target = self.channel_urls[name]
             try:
                 video_id, title = youtube.fetch_live_info(target)
-            except HTTPError as error:
-                # code == 404 here covers both a real transport 404 and
-                # fetch_live_info() synthesizing one when the browse API
-                # answers 200 OK with an "alerts" ERROR banner instead (a
-                # stale/bad browseId) — both mean the same thing to this
-                # retry: re-resolve the channel and try once more.
-                if error.code != 404:
+            except (HTTPError, youtube.ChannelNotFoundError) as error:
+                # A ChannelNotFoundError (fetch_live_info() raises this when
+                # the browse API answers 200 OK with an "alerts" ERROR banner
+                # — a stale/bad browseId) and a genuine transport
+                # HTTPError(404) mean the same thing to this retry: re-resolve
+                # the channel and try once more. Any other HTTPError code is
+                # a real failure, not one this retry can do anything about.
+                if isinstance(error, HTTPError) and error.code != 404:
                     raise
                 try:
                     target = youtube.resolve_channel_url(slug)
                 except (HTTPError, OSError, UnicodeError, ValueError):
-                    # A 404 on /live can be a transient YouTube-side hiccup, and
-                    # some talents' hololivepro profile page no longer scrapes a
-                    # channel link (e.g. after graduation) so this retry can fail
-                    # every single cycle. Keep last-known state instead of
-                    # escalating to "error" and re-logging the same failure on
-                    # every refresh forever.
+                    # A 404/ChannelNotFoundError can be a transient YouTube-side
+                    # hiccup, and some talents' hololivepro profile page no
+                    # longer scrapes a channel link (e.g. after graduation) so
+                    # this retry can fail every single cycle. Keep last-known
+                    # state instead of escalating to "error" and re-logging the
+                    # same failure on every refresh forever.
                     return
                 self.channel_urls[name] = target
                 for index, (target_name, slug, _, unit) in enumerate(self.targets):
                     if target_name == name:
                         self.targets[index] = (target_name, slug, target, unit)
                         break
-                video_id, title = youtube.fetch_live_info(target)
+                try:
+                    # attempts=1: this is already the retry after a resolve
+                    # + fetch round-trip, so skip fetch_live_info()'s own
+                    # internal retry-on-transient-error loop here rather than
+                    # letting this one talent's worker thread hold one of
+                    # refresh_worker()'s 12 concurrent slots for yet another
+                    # full retry cycle on top of everything already tried.
+                    video_id, title = youtube.fetch_live_info(target, attempts=1)
+                except (HTTPError, youtube.ChannelNotFoundError):
+                    # Same reasoning as the resolve_channel_url failure just
+                    # above: a freshly re-resolved channel that still
+                    # 404s/doesn't exist gets the same "keep last-known state,
+                    # don't escalate to a logged error every cycle" treatment
+                    # rather than falling through to the outer except below.
+                    return
             if video_id:
                 # Set live_urls before states: open_target() reads states
                 # first, so this ordering keeps it from ever observing

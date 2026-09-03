@@ -50,7 +50,7 @@ With the LIVE filter enabled, the list narrows to talents currently live and the
   - `widget.py` — the window itself (drawing and event handling)
   - `config.py` — window defaults and `settings.json` read/write
   - `talents.py` — loads `talents.json`
-  - `youtube.py` — channel resolution and live-status scraping
+  - `youtube.py` — channel resolution and live-status detection (via YouTube's internal innertube API)
   - `theme.py` / `strings.py` / `fonts.py` — colors, localized strings, and fonts
   - `layout.py` — layout table for the top-right button row
   - `paths.py` — path resolution and logging (size-capped rotation)

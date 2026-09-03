@@ -32,6 +32,14 @@ def _create_mutex():
     return mutex, _kernel32.GetLastError() == 183
 
 
+def bring_to_front(hwnd):
+    """Restore and foreground a window handle. Shared with
+    tools/capture_screenshots.py, which needs the same sequence to bring the
+    widget forward before driving it."""
+    _user32.ShowWindow(hwnd, SW_RESTORE)
+    _user32.SetForegroundWindow(hwnd)
+
+
 def ensure_single_instance():
     # A named Win32 mutex (not a lockfile) so a crashed process can't leave a
     # stale lock behind — the OS releases the mutex automatically. Call this
@@ -52,8 +60,7 @@ def ensure_single_instance():
     while True:
         hwnd = _user32.FindWindowW(None, WINDOW_TITLE)
         if hwnd:
-            _user32.ShowWindow(hwnd, SW_RESTORE)
-            _user32.SetForegroundWindow(hwnd)
+            bring_to_front(hwnd)
             raise SystemExit(0)
         if time.monotonic() >= deadline:
             raise SystemExit(0)

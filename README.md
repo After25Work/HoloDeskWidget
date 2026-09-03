@@ -50,7 +50,7 @@ LIVEフィルタ使用時は、配信中のタレントに絞り込んだ上で�
   - `widget.py` — ウィンドウ本体(描画・イベント処理)
   - `config.py` — ウィンドウ既定値・`settings.json`の読み書き
   - `talents.py` — `talents.json`の読み込み
-  - `youtube.py` — チャンネル解決・配信状況スクレイピング
+  - `youtube.py` — チャンネル解決・配信状況の取得(YouTube内部API/innertube経由)
   - `theme.py` / `strings.py` / `fonts.py` — 配色・多言語文字列・フォント
   - `layout.py` — 右上ボタン列の配置テーブル
   - `paths.py` — パス解決とログ出力(サイズ上限付きローテーション)

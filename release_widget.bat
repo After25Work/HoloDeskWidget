@@ -36,6 +36,16 @@ if not defined VERSION_RAW (
 set "VERSION_RAW=%VERSION_RAW: =%"
 set "VERSION=%VERSION_RAW:"=%"
 
+rem Guard against a __version__ line format change (quote style, extra
+rem tokens, a pre-release suffix) silently producing a garbled VERSION that
+rem would otherwise only surface later as a malformed staging folder/zip name.
+echo %VERSION%| findstr /R "^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*$" >nul
+if errorlevel 1 (
+    echo [ERROR] Parsed version "%VERSION%" from "%VERSION_FILE%" doesn't look like x.y.z.
+    pause
+    exit /b 1
+)
+
 echo Building "HoloDesk Widget.exe" (version %VERSION%)...
 call "%ROOT%build_widget.bat"
 if errorlevel 1 (

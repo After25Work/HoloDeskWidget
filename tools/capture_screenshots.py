@@ -40,7 +40,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from holowidget.layout import top_button_rects  # noqa: E402
-from holowidget.paths import SW_RESTORE, WINDOW_TITLE  # noqa: E402
+from holowidget.paths import WINDOW_TITLE  # noqa: E402
+from holowidget.single_instance import bring_to_front  # noqa: E402
 
 OUT_DIR = ROOT / "docs" / "screenshots"
 LAUNCH_SCRIPT = ROOT / "start_widget_native.py"
@@ -59,8 +60,6 @@ user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
 user32.FindWindowW.restype = wintypes.HWND
 user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
 user32.GetWindowRect.restype = wintypes.BOOL
-user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
 user32.mouse_event.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
                                 wintypes.DWORD, ctypes.c_void_p]
@@ -97,11 +96,6 @@ def get_window_rect(hwnd):
     rect = wintypes.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
     return rect.left, rect.top, rect.right, rect.bottom
-
-
-def bring_to_front(hwnd):
-    user32.ShowWindow(hwnd, SW_RESTORE)
-    user32.SetForegroundWindow(hwnd)
 
 
 def click_at(x, y, button="left"):
@@ -241,12 +235,20 @@ def capture_live_ticker_gif(hwnd):
     click_top_button(hwnd, "filter", settle=1.0)  # live-only ON; resizes the window
     rect = get_window_rect(hwnd)
     frames = []
+    durations = []
     for _ in range(GIF_FRAME_COUNT):
+        # grab() itself takes non-trivial wall-clock time on top of the
+        # sleep below, so the real gap between frames is longer than
+        # GIF_FRAME_INTERVAL alone -- record the actual elapsed time per
+        # frame instead of assuming it, so the saved GIF's playback speed
+        # matches how fast the ticker actually scrolled during capture.
+        start = time.monotonic()
         frames.append(grab(rect))
         time.sleep(GIF_FRAME_INTERVAL)
+        durations.append(int((time.monotonic() - start) * 1000))
     frames[0].save(
         OUT_DIR / "live_ticker.gif", save_all=True, append_images=frames[1:],
-        duration=int(GIF_FRAME_INTERVAL * 1000), loop=0,
+        duration=durations, loop=0,
     )
     print(f"  saved live_ticker.gif ({len(frames)} frames)")
     click_top_button(hwnd, "filter", settle=1.0)  # back to the default (all talents)
