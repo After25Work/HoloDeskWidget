@@ -3,7 +3,12 @@ import time
 
 from .paths import SW_RESTORE, WINDOW_TITLE
 
-_MUTEX_NAME = "hololive-liver-board-native-single-instance"
+# Derived from WINDOW_TITLE (not a bare fixed string) so a sibling app built
+# from the same codebase under a different name -- e.g. VTDeskWidget, whose
+# WINDOW_TITLE is "VTDeskWidget::SingleInstance" -- doesn't grab the same
+# system-wide named mutex and block this one (or vice versa) just because
+# neither app's own window can be found under the other's title.
+_MUTEX_NAME = f"{WINDOW_TITLE}-native-single-instance"
 # Tk/Tcl teardown (root.destroy() -> mainloop() return -> interpreter exit)
 # lags a beat behind the window disappearing, so the just-closed process can
 # still hold the mutex handle for a moment after its window is gone. Give it

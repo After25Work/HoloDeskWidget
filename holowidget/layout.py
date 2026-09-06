@@ -12,13 +12,14 @@ BUTTON_RIGHT_MARGIN = 40
 # it in config.py) when the live-only filter button was added.
 TOP_BUTTON_WIDTHS = {
     "close": 32,
+    "fullscreen": 32,
     "pin": 60,  # wider than the rest to fit "最前面"/"TopMost"
     "lang": 32,
     "color": 32,
     "mode": 32,
     "filter": 32,
 }
-TOP_BUTTON_ORDER = ["close", "pin", "lang", "color", "mode", "filter"]
+TOP_BUTTON_ORDER = ["close", "fullscreen", "pin", "lang", "color", "mode", "filter"]
 
 
 def top_button_rects(width):

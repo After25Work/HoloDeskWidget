@@ -40,6 +40,20 @@ _EMOJI_SPLIT_RE = re.compile(
     "([\U0001F000-\U0001FFFF\U00002600-\U000027BF\U00002B00-\U00002BFF"
     "\U0000FE0F\U0000200D\U000020E3]+)"
 )
+
+# Some live titles borrow standalone combining marks/syllabics from scripts
+# no installed font here (Yu Gothic/Meiryo/MS Gothic/Segoe UI Emoji) has
+# glyphs for — Thai/Lao tone marks used without a base letter (e.g. "☾ ໋"),
+# and Unified Canadian Aboriginal Syllabics (e.g. ".ᐟ.ᐟ") — purely as
+# decoration rather than to write actual Thai/Lao/Canadian-syllabics text.
+# Rendered as-is these come out as tofu boxes, so they're stripped from
+# titles entirely; see also the VARIATION SELECTOR-15 strip below for the
+# same "known decoration our fonts can't render" reasoning.
+_UNSUPPORTED_DECORATION_RE = re.compile(
+    "[\U00000E31\U00000E34-\U00000E3A\U00000E47-\U00000E4E"
+    "\U00000EB1\U00000EB4-\U00000EBC\U00000EC8-\U00000ECD"
+    "\U00001400-\U0000167F\U000018B0-\U000018FF]+"
+)
 from .version import __version__
 
 # Declared once at module scope, argtypes/restype pinned explicitly — same
@@ -110,6 +124,12 @@ class LayeredWidget:
         self.resize_drag = False
         self.active_resize_edge: Optional[str] = None
         self.pending_position: Optional[Tuple[int, int]] = None
+        # Fullscreen (fill-the-screen) toggle state. _pre_fullscreen holds the
+        # (width, height, x, y) to restore on exit -- None whenever
+        # is_fullscreen is False, so current_settings() can tell there's
+        # nothing to substitute in.
+        self.is_fullscreen = False
+        self._pre_fullscreen: Optional[Tuple[int, int, int, int]] = None
         # Keyboard-focus index into focusable_items() — None means no item
         # currently has the keyboard focus ring (mouse-only interaction).
         self.focus_index: Optional[int] = None
@@ -204,6 +224,7 @@ class LayeredWidget:
         # (or vice versa) just because one of the two forgot to list it.
         return {
             "close": self.close,
+            "fullscreen": self.toggle_fullscreen,
             "pin": self.toggle_topmost,
             "lang": self.toggle_lang,
             "color": self.toggle_palette,
@@ -363,16 +384,22 @@ class LayeredWidget:
         return layout_items, y
 
     def compute_grid(self):
-        # No scroll support: rows/dividers/fonts scale uniformly to always fill the
-        # available vertical space exactly — shrinking so nothing is dropped when
-        # it's too tall for the window, growing to use the space rather than
-        # leaving it blank when the window is taller than the content needs.
+        # No scroll support: rows/dividers/fonts scale uniformly so nothing is
+        # dropped when the window is too short for the content (shrinking),
+        # and text grows a bit for readability when the window is taller than
+        # the content needs (see the 1.5x cap note below) — but the grid
+        # itself always stays top-aligned, like an ordinary list.
         _, natural_end = self.build_grid_layout(25, 18)
         available_height = max(1, self.height - GRID_TOP - 90)
         content_height = max(1, natural_end - GRID_TOP)
-        scale = max(0.15, min(1.15, available_height / content_height))
+        scale = max(0.15, min(1.5, available_height / content_height))
         row_height = 25 * scale
         divider_height = 18 * scale
+        # The 1.5x growth cap keeps names readable instead of ballooning on a
+        # very tall window with little content (e.g. a small custom list on a
+        # maximized window); content stays anchored under GRID_TOP (like an
+        # ordinary top-aligned list) rather than being centered, so any space
+        # the cap leaves unused simply falls below the grid.
         layout_items, grid_end = self.build_grid_layout(row_height, divider_height)
         return layout_items, row_height, divider_height, scale
 
@@ -394,6 +421,7 @@ class LayeredWidget:
         close_rect_btn = btn["close"]
         draw.rounded_rectangle(close_rect_btn, 8, fill=self.tint(colors["neutral_btn"]) + (255,))
         self.draw_centered(draw, close_rect_btn, "×", font(18, True), self.text_color(colors["text"]))
+        self.draw_fullscreen_button(draw, btn["fullscreen"], colors)
         pin_fill = accent if self.topmost else self.tint(colors["neutral_btn"]) + (255,)
         pin_text = self.text_color((24, 24, 31)) if self.topmost else self.text_color(colors["text"])
         pin_rect = btn["pin"]
@@ -476,6 +504,30 @@ class LayeredWidget:
         clock_label_size = base_label_size
         clock_min_label_size = min_label_size
         pending_tickers = []
+        # Share one label-lane width across every live-view row that has a
+        # now-playing title, so the ticker starts at the same x on every row
+        # instead of wherever each row's own name happens to end, and no name
+        # gets ellipsis-truncated just to make room for it. Every row is one
+        # talent wide in the live-only view (see the note below), so item["w"]
+        # is the same for all of them.
+        shared_title_label_area_w = None
+        if self.live_only:
+            natural_widths = []
+            row_w = None
+            for item in grid_layout:
+                if item["type"] != "talent":
+                    continue
+                name, slug, _, _ = self.targets[item["index"]]
+                title = self.live_titles.get(name)
+                if not title:
+                    continue
+                row_w = item["w"]
+                bullet = "● " if self.states[name] == "live" else "! " if self.states[name] == "error" else "• "
+                label = bullet + (name if self.lang == "ja" else english_name(slug))
+                _, natural_font = self._fit_label(label, base_label_size, min_label_size, item["w"] - 12)
+                natural_widths.append(natural_font.getbbox(label)[2])
+            if natural_widths:
+                shared_title_label_area_w = max(90, min(row_w - 12, max(natural_widths) + 12))
         for item in grid_layout:
             if item["type"] == "divider":
                 draw.text((40, item["y"]), item["unit"], font=divider_font,
@@ -517,7 +569,12 @@ class LayeredWidget:
             # only needs a modest fixed-width lane — the rest of the row goes
             # to the now-playing ticker built below.
             title = self.live_titles.get(name) if self.live_only else None
-            label_area_w = min(item["w"] * 0.4, max(90, 170 * label_scale)) if title else item["w"]
+            # Never abbreviate the talent name to make room for the
+            # now-playing ticker: use the shared lane width computed above
+            # (wide enough for the widest name that has a title) instead of a
+            # fixed cap, so the name isn't truncated and every ticker still
+            # lines up at the same x.
+            label_area_w = shared_title_label_area_w if title else item["w"]
             max_label_width = label_area_w - 12
             fitted_label, label_font = self._fit_label(label, base_label_size, min_label_size,
                                                         max_label_width)
@@ -799,6 +856,22 @@ class LayeredWidget:
                 x2, y2 = cx + math.cos(angle) * (r + 7), cy + math.sin(angle) * (r + 7)
                 draw.line((x1, y1, x2, y2), fill=icon_color, width=2)
 
+    def draw_fullscreen_button(self, draw, rect, colors):
+        # Four corner brackets, like a camera viewfinder. Not fullscreen: they
+        # sit out near the icon's own corners (an "expand" glyph); fullscreen
+        # active: they pull in near the center (a "restore" glyph) and the
+        # button gets the same accent-fill treatment as pin/filter's active
+        # state.
+        fill = self.accent_color() if self.is_fullscreen else self.tint(colors["neutral_btn"]) + (255,)
+        draw.rounded_rectangle(rect, 8, fill=fill)
+        icon_color = self.text_color((24, 24, 31)) if self.is_fullscreen else self.text_color(colors["text"])
+        cx, cy = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+        offset, arm = (3, 2) if self.is_fullscreen else (7, 4)
+        for sx, sy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+            x, y = cx + sx * offset, cy + sy * offset
+            draw.line((x, y, x - sx * arm, y), fill=icon_color, width=2)
+            draw.line((x, y, x, y - sy * arm), fill=icon_color, width=2)
+
     def text_color(self, color):
         return tuple(color[:3])
 
@@ -859,6 +932,12 @@ class LayeredWidget:
         edge = ("se" if self._in_rect(event.x, event.y, self.resize_grip_rect())
                 else self.resize_edge(event.x, event.y))
         if edge:
+            # A manual resize means the window is no longer "fullscreen" in
+            # any tracked sense -- drop the flag (and the now-meaningless
+            # restore point) so the button's icon and close()'s saved size
+            # both reflect what's actually on screen.
+            self.is_fullscreen = False
+            self._pre_fullscreen = None
             self.resize_drag = True
             self.active_resize_edge = edge
             self.resize_origin = (event.x_root, event.y_root, self.width, self.height,
@@ -973,7 +1052,7 @@ class LayeredWidget:
         # its own, which is fine since those only run once per keystroke.
         btn = self.top_button_rects()
         actions = self.top_button_actions()
-        visual_order = ("filter", "mode", "color", "lang", "pin", "close")
+        visual_order = ("filter", "mode", "color", "lang", "pin", "fullscreen", "close")
         items = [{"kind": "button", "rect": btn[key], "activate": actions[key]}
                 for key in visual_order]
         for key, geom in self.slider_geometry().items():
@@ -1141,6 +1220,8 @@ class LayeredWidget:
         # colors, so pin/live_only would otherwise look permanently unchecked.
         pin_label = f"✓ {self.t('pin')}" if self.topmost else self.t("pin")
         menu.add_command(label=pin_label, command=self.toggle_topmost)
+        fullscreen_label = f"✓ {self.t('fullscreen')}" if self.is_fullscreen else self.t("fullscreen")
+        menu.add_command(label=fullscreen_label, command=self.toggle_fullscreen)
         live_label = f"✓ {self.t('live_filter')}" if self.live_only else self.t("live_filter")
         menu.add_command(label=live_label, command=self.toggle_live_only)
         # Label names the CURRENT mode (like draw_mode_button()'s moon/sun icon),
@@ -1181,6 +1262,34 @@ class LayeredWidget:
         self.topmost = not self.topmost
         self.root.attributes("-topmost", self.topmost)
         self.render()
+
+    def toggle_fullscreen(self):
+        if self.is_fullscreen:
+            self.exit_fullscreen()
+        else:
+            self.enter_fullscreen()
+        self.render()
+
+    def enter_fullscreen(self):
+        if self.is_fullscreen:
+            return
+        self._pre_fullscreen = (self.width, self.height,
+                                self.root.winfo_x(), self.root.winfo_y())
+        # Clamped to MAX_WIDTH/MAX_HEIGHT (4K) like every other resize, so a
+        # screen larger than that doesn't hand the panel a size nothing else
+        # in this file was ever laid out to expect.
+        self.width = max(MIN_WIDTH, min(MAX_WIDTH, self.root.winfo_screenwidth()))
+        self.height = max(MIN_HEIGHT, min(MAX_HEIGHT, self.root.winfo_screenheight()))
+        self.is_fullscreen = True
+        self.root.geometry(f"{self.width}x{self.height}+0+0")
+
+    def exit_fullscreen(self):
+        if not self.is_fullscreen or self._pre_fullscreen is None:
+            return
+        self.width, self.height, x, y = self._pre_fullscreen
+        self.is_fullscreen = False
+        self._pre_fullscreen = None
+        self.root.geometry(f"{self.width}x{self.height}+{x}+{y}")
 
     def toggle_lang(self):
         self.lang = "en" if self.lang == "ja" else "ja"
@@ -1435,7 +1544,16 @@ class LayeredWidget:
                 # state == "live" with live_urls not yet populated.
                 self.live_urls[name] = f"https://www.youtube.com/watch?v={video_id}"
                 if title:
-                    self.live_titles[name] = title
+                    # Strip VARIATION SELECTOR-15 (text-presentation): some
+                    # titles pair it with a dingbat/symbol (e.g. "✧︎")
+                    # to force plain-text rendering, but Yu Gothic has no glyph
+                    # for the selector itself and renders it as a tofu box.
+                    # ️ (emoji-presentation) is left alone since that half
+                    # of the run already renders fine via the Segoe UI Emoji
+                    # fallback in _emoji_runs(). _UNSUPPORTED_DECORATION_RE
+                    # strips other known no-glyph decoration the same way.
+                    self.live_titles[name] = _UNSUPPORTED_DECORATION_RE.sub(
+                        "", title.replace("︎", ""))
                 else:
                     self.live_titles.pop(name, None)
                 self.states[name] = "live"
@@ -1443,7 +1561,8 @@ class LayeredWidget:
                 self.live_urls.pop(name, None)
                 self.live_titles.pop(name, None)
                 self.states[name] = "offline"
-        except (HTTPError, OSError, UnicodeError, ValueError) as error:
+        except (HTTPError, OSError, UnicodeError, ValueError,
+                youtube.ChannelNotFoundError) as error:
             self.states[name] = "error"
             self.live_urls.pop(name, None)
             self.live_titles.pop(name, None)
@@ -1454,11 +1573,17 @@ class LayeredWidget:
             x, y = self.root.winfo_x(), self.root.winfo_y()
         except tk.TclError:
             x, y = DEFAULT_SETTINGS["x"], DEFAULT_SETTINGS["y"]
+        width, height = self.width, self.height
+        if self.is_fullscreen and self._pre_fullscreen is not None:
+            # Persist the size/position from before the fullscreen toggle, not
+            # the maximized dimensions themselves -- otherwise closing while
+            # fullscreen would make every future launch start maximized too.
+            width, height, x, y = self._pre_fullscreen
         return {
             "x": x,
             "y": y,
-            "width": self.width,
-            "height": self.height,
+            "width": width,
+            "height": height,
             "background_alpha": self.background_alpha,
             "lang": self.lang,
             "topmost": self.topmost,

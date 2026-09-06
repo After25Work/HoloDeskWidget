@@ -7,11 +7,15 @@ from .theme import THEME_PALETTE
 # Resizing reflows the layout (more grid columns, wider sliders) rather than
 # zooming a fixed canvas. DEFAULT_* is the initial window size; fonts and row
 # heights stay constant, only positions/counts adapt to the current size.
-DEFAULT_WIDTH, DEFAULT_HEIGHT = 480, 996
-# 480 (not 440) so the extra live-only-filter button in the top row never
-# overlaps the "LIVE STATUS" title text at minimum width.
-MIN_WIDTH, MIN_HEIGHT = 480, 450
-MAX_WIDTH, MAX_HEIGHT = 1400, 1600
+DEFAULT_WIDTH, DEFAULT_HEIGHT = 524, 996
+# 524 (not 480) so the extra fullscreen-toggle button in the top row never
+# overlaps the "LIVE STATUS" title text at minimum width, the same reasoning
+# that widened this from 440 to 480 when the live-only-filter button was added.
+MIN_WIDTH, MIN_HEIGHT = 524, 450
+# Cap resizing at 4K (3840x2160) -- the fullscreen button lets a window grow
+# to fill the whole screen, and this is the largest a real monitor is likely
+# to be.
+MAX_WIDTH, MAX_HEIGHT = 3840, 2160
 WINDOW_ALPHA = 0.78
 MIN_WINDOW_ALPHA = 0.05
 MIN_BACKGROUND_DARKNESS = 0.3
@@ -66,11 +70,17 @@ def load_settings():
     settings["background_alpha"] = max(0.0, min(1.0 - MIN_BACKGROUND_DARKNESS,
         _coerce(settings["background_alpha"], DEFAULT_SETTINGS["background_alpha"], float)))
     settings["lang"] = settings["lang"] if settings["lang"] in STRINGS else "ja"
-    settings["topmost"] = bool(settings["topmost"])
+    # isinstance, not bool(...): bool() coerces any truthy non-bool (e.g. a
+    # hand-edited string "false") to True instead of falling back to the
+    # default like every other coerced field here does.
+    settings["topmost"] = (settings["topmost"] if isinstance(settings["topmost"], bool)
+                            else DEFAULT_SETTINGS["topmost"])
     settings["theme_index"] = max(0, min(len(THEME_PALETTE) - 1,
         _coerce(settings["theme_index"], DEFAULT_SETTINGS["theme_index"], int)))
-    settings["dark_mode"] = bool(settings["dark_mode"])
-    settings["live_only"] = bool(settings["live_only"])
+    settings["dark_mode"] = (settings["dark_mode"] if isinstance(settings["dark_mode"], bool)
+                              else DEFAULT_SETTINGS["dark_mode"])
+    settings["live_only"] = (settings["live_only"] if isinstance(settings["live_only"], bool)
+                              else DEFAULT_SETTINGS["live_only"])
     settings["text_scale"] = max(TEXT_SCALE_MIN, min(TEXT_SCALE_MAX,
         _coerce(settings["text_scale"], DEFAULT_SETTINGS["text_scale"], float)))
     return settings
