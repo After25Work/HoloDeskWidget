@@ -1,5 +1,6 @@
 @echo off
-rem Shared Python interpreter discovery for start_widget.bat and build_widget.bat.
+rem Shared Python interpreter discovery for start_widget_holo.bat, start_widget_vt.bat,
+rem and build_widget.bat.
 rem Searches, in order: the per-user 3.10 install, the machine-wide 3.10
 rem install, then PATH. Sets PYTHON_EXE on success. Call with "pythonw" as
 rem the first argument to additionally require pythonw.exe next to the

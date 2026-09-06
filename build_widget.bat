@@ -3,7 +3,20 @@ setlocal EnableExtensions DisableDelayedExpansion
 
 rem Always resolve files relative to this launcher, not the caller's directory.
 set "ROOT=%~dp0"
-set "SPEC=%ROOT%build\HoloDesk Widget.spec"
+set "VARIANT=%~1"
+
+if "%VARIANT%"=="holo" (
+    set "SPEC_NAME=HoloDesk Widget.spec"
+    set "EXE_NAME=HoloDesk Widget.exe"
+) else if "%VARIANT%"=="vt" (
+    set "SPEC_NAME=VTDeskWidget.spec"
+    set "EXE_NAME=VTDeskWidget.exe"
+) else (
+    echo [ERROR] Usage: build_widget.bat holo^|vt
+    pause
+    exit /b 1
+)
+set "SPEC=%ROOT%build\%SPEC_NAME%"
 
 if not exist "%SPEC%" (
     echo [ERROR] Missing PyInstaller spec: "%SPEC%"
@@ -30,7 +43,7 @@ if errorlevel 1 (
 rem PyInstaller resolves the spec's relative script path against its own
 rem directory, so run from build\ and redirect dist/work output back to root.
 pushd "%ROOT%build" >nul
-"%PYTHON_EXE%" -m PyInstaller "HoloDesk Widget.spec" --noconfirm --distpath "%ROOT%dist" --workpath "%ROOT%build"
+"%PYTHON_EXE%" -m PyInstaller "%SPEC_NAME%" --noconfirm --distpath "%ROOT%dist" --workpath "%ROOT%build"
 set "BUILD_ERROR=%ERRORLEVEL%"
 popd
 
@@ -40,5 +53,5 @@ pause
 exit /b %BUILD_ERROR%
 
 :BUILD_OK
-echo Build complete: "%ROOT%dist\HoloDesk Widget.exe"
+echo Build complete: "%ROOT%dist\%EXE_NAME%"
 exit /b 0

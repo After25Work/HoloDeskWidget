@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['../start_widget_holo.py'],
+    ['../start_widget_vt.py'],
     pathex=[],
     binaries=[],
     datas=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='HoloDesk Widget',
+    name='VTDeskWidget',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

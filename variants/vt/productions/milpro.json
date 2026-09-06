@@ -1,0 +1,14 @@
+[
+  {"name": "ミリプロ公式", "unit": "OFFICIAL", "slug": "milpro-official", "channel_url": "https://www.youtube.com/@Mil_Pro"},
+  {"name": "甘狼このみ", "unit": "ミリプロ", "slug": "amakami-konomi", "channel_url": "https://www.youtube.com/@AmakamiKonomi"},
+  {"name": "音ノ乃のの", "unit": "ミリプロ", "slug": "otono-nono", "channel_url": "https://www.youtube.com/@_nonono_nono"},
+  {"name": "あくび・でもんすぺーど", "unit": "ミリプロ", "slug": "akubi-demonspade", "channel_url": "https://www.youtube.com/@Akubi.demonspade"},
+  {"name": "小廻こま", "unit": "ミリプロ", "slug": "komawari-koma", "channel_url": "https://www.youtube.com/channel/UC_upTZ0otpptV5KARBsnIPg"},
+  {"name": "鹿乃まほろ", "unit": "ミリプロ", "slug": "kano-mahoro", "channel_url": "https://www.youtube.com/@Kano_"},
+  {"name": "音ノ瀬らこ", "unit": "ミリプロ", "slug": "otonose-raco", "channel_url": "https://www.youtube.com/@OtonoseRaco"},
+  {"name": "ゆらぎゆら", "unit": "ミリプロ", "slug": "yuragi-yura", "channel_url": "https://www.youtube.com/@_YuraYuragi"},
+  {"name": "虹深°ぬふ", "unit": "ミリプロ", "slug": "nijipuka-nuhu", "channel_url": "https://www.youtube.com/channel/UCj63OWl-HQ-I6ORzUWF1EDg"},
+  {"name": "眠雲ツクリ", "unit": "ミリプロ", "slug": "nemukumo-tsukuri", "channel_url": "https://www.youtube.com/@NemukumoTsukuri"},
+  {"name": "雨夜リズ", "unit": "ミリプロ", "slug": "amayo-liz", "channel_url": "https://www.youtube.com/@Amayo_liz"},
+  {"name": "夕霧レイ", "unit": "ミリプロ", "slug": "yugiri-ray", "channel_url": "https://www.youtube.com/@YugiriRay"}
+]

@@ -18,11 +18,15 @@ alpha), so whatever is on the real desktop shows through those corners; a
 moving/live wallpaper would otherwise bleed into the shots and, worse, flicker
 across the dozens of frames grabbed back to back for the ticker GIF.
 
-Windows only (uses ctypes user32 calls the same way holowidget/widget.py and
-holowidget/single_instance.py already do -- no extra dependency beyond the
-Pillow the app already requires). Run it from a normal desktop session (not
-over a remote/headless connection) since it moves the real mouse cursor and
-sends real clicks.
+Windows only (uses ctypes user32 calls the same way deskwidget_core/widget.py
+and deskwidget_core/single_instance.py already do -- no extra dependency
+beyond the Pillow the app already requires). Run it from a normal desktop
+session (not over a remote/headless connection) since it moves the real
+mouse cursor and sends real clicks.
+
+Targets the Holo variant specifically (see appconfig.configure() below) --
+re-point PROFILE/LAUNCH_SCRIPT/OUT_DIR at variants/vt if VT ever needs its
+own screenshot set.
 """
 
 import ctypes
@@ -39,12 +43,22 @@ from PIL import Image, ImageGrab
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from holowidget.layout import top_button_rects  # noqa: E402
-from holowidget.paths import WINDOW_TITLE  # noqa: E402
-from holowidget.single_instance import bring_to_front, find_window  # noqa: E402
+from deskwidget_core import appconfig  # noqa: E402
+from variants.holo.profile import PROFILE  # noqa: E402
 
-OUT_DIR = ROOT / "docs" / "screenshots"
-LAUNCH_SCRIPT = ROOT / "start_widget_native.py"
+appconfig.configure(PROFILE)
+
+from deskwidget_core import layout  # noqa: E402
+from deskwidget_core.paths import WINDOW_TITLE  # noqa: E402
+from deskwidget_core.single_instance import bring_to_front, find_window  # noqa: E402
+
+OUT_DIR = ROOT / "variants" / "holo" / "docs" / "screenshots"
+LAUNCH_SCRIPT = ROOT / "start_widget_holo.py"
+# The Holo variant always ships a single production (see
+# variants/holo/productions/index.json), so its button row never draws the
+# "productions" button -- see GridMixin.top_button_rects() in
+# deskwidget_core/grid_layout.py, which this mirrors for the same reason.
+BUTTON_ORDER = [key for key in layout.TOP_BUTTON_ORDER if key != "productions"]
 
 # How long to let the widget's initial refresh() (network fetch of every
 # talent's live status) settle before the first screenshot, so main.png
@@ -107,7 +121,7 @@ def grab(bbox):
 
 
 def button_center(width, key):
-    left, top, right, bottom = top_button_rects(width)[key]
+    left, top, right, bottom = layout.top_button_rects(width, BUTTON_ORDER)[key]
     return (left + right) / 2, (top + bottom) / 2
 
 
@@ -189,7 +203,7 @@ def capture_main(hwnd, suffix):
 
 
 def capture_buttons(width, full_img, suffix):
-    rects = top_button_rects(width).values()
+    rects = layout.top_button_rects(width, BUTTON_ORDER).values()
     pad = 8
     box = (
         min(r[0] for r in rects) - pad,

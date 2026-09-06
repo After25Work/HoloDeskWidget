@@ -5,6 +5,7 @@ __pycache__/
 *.log.dependency
 /build/*
 !/build/HoloDesk Widget.spec
+!/build/VTDeskWidget.spec
 /dist/
 /release/
 settings.json

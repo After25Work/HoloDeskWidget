@@ -1,0 +1,13 @@
+[
+  {"id": "hololive", "name": {"ja": "ホロライブ", "en": "hololive"}, "file": "hololive.json", "auto_resolve": "hololivepro"},
+  {"id": "nijisanji", "name": {"ja": "にじさんじ", "en": "NIJISANJI"}, "file": "nijisanji.json", "auto_resolve": null},
+  {"id": "aogiri", "name": {"ja": "あおぎり高校", "en": "Aogiri Highschool"}, "file": "aogiri.json", "auto_resolve": null},
+  {"id": "vspo", "name": {"ja": "ぶいすぽっ！", "en": "VSPO!"}, "file": "vspo.json", "auto_resolve": null},
+  {"id": "neoporte", "name": {"ja": "ネオポルテ", "en": "Neo-Porte"}, "file": "neoporte.json", "auto_resolve": null},
+  {"id": "milpro", "name": {"ja": "ミリプロ", "en": "Million Production"}, "file": "milpro.json", "auto_resolve": null},
+  {"id": "nanashi", "name": {"ja": "ななしいんく", "en": "774inc"}, "file": "nanashi.json", "auto_resolve": null},
+  {"id": "noripro", "name": {"ja": "のりプロ", "en": "Noripro"}, "file": "noripro.json", "auto_resolve": null},
+  {"id": "specialite", "name": {"ja": "すぺしゃりて", "en": "Specialite"}, "file": "specialite.json", "auto_resolve": null},
+  {"id": "react", "name": {"ja": "Re:AcT", "en": "Re:AcT"}, "file": "react.json", "auto_resolve": null},
+  {"id": "custom", "name": {"ja": "個人勢", "en": "Independent"}, "file": "custom.json", "auto_resolve": null}
+]
