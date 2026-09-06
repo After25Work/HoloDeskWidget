@@ -1,5 +1,6 @@
 import json
 
+from .fonts import DEFAULT_FONT_FAMILY
 from .paths import SETTINGS_PATH, log_error
 from .strings import STRINGS
 from .theme import THEME_PALETTE
@@ -7,11 +8,12 @@ from .theme import THEME_PALETTE
 # Resizing reflows the layout (more grid columns, wider sliders) rather than
 # zooming a fixed canvas. DEFAULT_* is the initial window size; fonts and row
 # heights stay constant, only positions/counts adapt to the current size.
-DEFAULT_WIDTH, DEFAULT_HEIGHT = 524, 996
-# 524 (not 480) so the extra fullscreen-toggle button in the top row never
+DEFAULT_WIDTH, DEFAULT_HEIGHT = 568, 996
+# 568 (not 524) so the extra font-picker button in the top row never
 # overlaps the "LIVE STATUS" title text at minimum width, the same reasoning
-# that widened this from 440 to 480 when the live-only-filter button was added.
-MIN_WIDTH, MIN_HEIGHT = 524, 450
+# that widened this from 440 to 480 to 524 as each earlier top button (the
+# live-only filter, the fullscreen toggle) was added.
+MIN_WIDTH, MIN_HEIGHT = 568, 450
 # Cap resizing at 4K (3840x2160) -- the fullscreen button lets a window grow
 # to fill the whole screen, and this is the largest a real monitor is likely
 # to be.
@@ -34,6 +36,7 @@ DEFAULT_SETTINGS = {
     # button / right-click menu).
     "topmost": False,
     "theme_index": 0,
+    "font_family": DEFAULT_FONT_FAMILY,
     "dark_mode": True,
     "live_only": False,
     "text_scale": 1.0,
@@ -77,6 +80,16 @@ def load_settings():
                             else DEFAULT_SETTINGS["topmost"])
     settings["theme_index"] = max(0, min(len(THEME_PALETTE) - 1,
         _coerce(settings["theme_index"], DEFAULT_SETTINGS["theme_index"], int)))
+    # Not checked against list_installed_fonts() here: that's a full
+    # Fonts-directory scan (every file loaded via Pillow/FreeType, plus a
+    # GDI glyph-coverage probe per family -- can easily be 200+ fonts), and
+    # running it this early would block startup before the window even
+    # exists. font() already tolerates an unknown/uninstalled name
+    # gracefully via its fallback chain, so an uninstalled saved name just
+    # means the font-picker's "currently selected" row won't highlight
+    # until a real family is picked -- not worth paying the scan's cost on
+    # every launch to avoid.
+    settings["font_family"] = _coerce(settings["font_family"], DEFAULT_SETTINGS["font_family"], str)
     settings["dark_mode"] = (settings["dark_mode"] if isinstance(settings["dark_mode"], bool)
                               else DEFAULT_SETTINGS["dark_mode"])
     settings["live_only"] = (settings["live_only"] if isinstance(settings["live_only"], bool)

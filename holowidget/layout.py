@@ -16,10 +16,13 @@ TOP_BUTTON_WIDTHS = {
     "pin": 60,  # wider than the rest to fit "最前面"/"TopMost"
     "lang": 32,
     "color": 32,
+    "font": 32,
     "mode": 32,
     "filter": 32,
 }
-TOP_BUTTON_ORDER = ["close", "fullscreen", "pin", "lang", "color", "mode", "filter"]
+# "font" sits right after "color" so the two appearance pickers stay adjacent
+# on screen.
+TOP_BUTTON_ORDER = ["close", "fullscreen", "pin", "lang", "color", "font", "mode", "filter"]
 
 
 def top_button_rects(width):
