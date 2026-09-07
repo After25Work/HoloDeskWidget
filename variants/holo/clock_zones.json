@@ -1,10 +1,8 @@
 [
-  {"label": "HST", "offset_hours": -10, "date_order": "mdy", "name_ja": "ハワイ", "name_en": "Hawaii"},
-  {"label": "PST", "offset_hours": -8, "date_order": "mdy", "name_ja": "ロサンゼルス", "name_en": "Los Angeles", "dst": {"rule": "us", "offset_hours": 1, "label": "PDT"}},
-  {"label": "EST", "offset_hours": -5, "date_order": "mdy", "name_ja": "ニューヨーク", "name_en": "New York", "dst": {"rule": "us", "offset_hours": 1, "label": "EDT"}},
-  {"label": "UTC", "offset_hours": 0, "date_order": "iso", "name_ja": "UTC", "name_en": "UTC"},
-  {"label": "MSK", "offset_hours": 3, "date_order": "dmy", "name_ja": "モスクワ", "name_en": "Moscow"},
-  {"label": "GST", "offset_hours": 4, "date_order": "dmy", "name_ja": "ドバイ", "name_en": "Dubai"},
+  {"label": "PST", "offset_hours": -8, "date_order": "mdy", "name_ja": "アメリカ西海岸", "name_en": "US West Coast", "dst": {"rule": "us", "offset_hours": 1, "label": "PDT"}},
+  {"label": "EST", "offset_hours": -5, "date_order": "mdy", "name_ja": "アメリカ東海岸", "name_en": "US East Coast", "dst": {"rule": "us", "offset_hours": 1, "label": "EDT"}},
+  {"label": "GMT", "offset_hours": 0, "date_order": "dmy", "name_ja": "イギリス", "name_en": "UK", "dst": {"rule": "eu", "offset_hours": 1, "label": "BST"}},
+  {"label": "CET", "offset_hours": 1, "date_order": "dmy", "name_ja": "中央ヨーロッパ", "name_en": "Central Europe", "dst": {"rule": "eu", "offset_hours": 1, "label": "CEST"}},
   {"label": "WIB", "offset_hours": 7, "date_order": "dmy", "name_ja": "ジャカルタ", "name_en": "Jakarta"},
-  {"label": "JST", "offset_hours": 9, "date_order": "ymd", "name_ja": "東京", "name_en": "Tokyo"}
+  {"label": "JST", "offset_hours": 9, "date_order": "ymd", "name_ja": "日本", "name_en": "Japan"}
 ]
