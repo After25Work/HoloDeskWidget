@@ -202,16 +202,13 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         ]
 
     def _tray_tooltip_text(self):
-        # Dedupe live/error state by talent name the same way _merge_all_slots()
-        # does for the on-screen "All" tab status bar -- a plain per-production
-        # sum here would double-count a talent listed under two enabled
-        # productions instead of matching what's shown on screen.
-        merged_states = {}
-        total_count = 0
-        for production in self._visible_productions():
-            slot = self._production_slot(production["id"])
-            merged_states.update(slot["states"])
-            total_count += len(slot["targets"])
+        # Reuses _merge_all_slots() (rather than hand-rolling the same merge)
+        # so this stays under the same per-slot lock that guards it against
+        # check_one()'s background threads -- see the "lock" note in
+        # _production_slot().
+        merged_states = self._merge_all_slots("states")
+        total_count = sum(len(self._production_slot(production["id"])["targets"])
+                           for production in self._visible_productions())
         live_count = sum(1 for state in merged_states.values() if state == "live")
         return f"{appconfig.app_name()} - {self.t('count', live=live_count, total=total_count)}"
 

@@ -438,13 +438,19 @@ class MenuMixin:
         today = time.strftime("%Y-%m-%d")
         today_starts = [event for event in all_events if event.get("event") == "start"
                         and time.strftime("%Y-%m-%d", time.localtime(event.get("ts", 0))) == today]
+        # Keyed by (production_id, name), not name alone -- talent names are
+        # only guaranteed unique within one production's own JSON file, and
+        # a variant with several enabled productions (see
+        # has_multiple_productions()) can otherwise merge two different
+        # talents' counts together.
         counts = {}
         for event in today_starts:
-            counts[event.get("name", "?")] = counts.get(event.get("name", "?"), 0) + 1
+            key = (event.get("production_id"), event.get("name", "?"))
+            counts[key] = counts.get(key, 0) + 1
         top = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)[:5]
         summary = self.t("stream_history_today", count=len(today_starts))
         if top:
-            summary += "  " + " / ".join(f"{name} x{count}" for name, count in top)
+            summary += "  " + " / ".join(f"{name} x{count}" for (_, name), count in top)
 
         tk.Label(win, text=summary, bg=panel_hex, fg=text_hex, anchor="w", justify="left",
                 wraplength=540, font=("Yu Gothic UI", 9, "bold")).pack(fill="x", padx=10, pady=(10, 4))

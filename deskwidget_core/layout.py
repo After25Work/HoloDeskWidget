@@ -36,6 +36,16 @@ TOP_BUTTON_WIDTHS = {
 TOP_BUTTON_ORDER = ["close", "fullscreen", "tray", "pin", "font", "lang", "color", "mode", "productions", "filter"]
 
 
+def button_order(has_multiple_productions):
+    # Single source of truth for "drop the productions button for a
+    # single-production variant" -- GridMixin.top_button_rects() and
+    # tools/capture_screenshots.py both need this same order and must never
+    # drift apart on it.
+    if has_multiple_productions:
+        return TOP_BUTTON_ORDER
+    return [key for key in TOP_BUTTON_ORDER if key != "productions"]
+
+
 def button_row_delta(button_key):
     """Width a new top-row button adds to the minimum safe window width --
     its own width plus one gap. Variant profile.py files add this to their

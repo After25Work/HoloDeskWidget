@@ -56,9 +56,9 @@ OUT_DIR = ROOT / "variants" / "holo" / "docs" / "screenshots"
 LAUNCH_SCRIPT = ROOT / "start_widget_holo.py"
 # The Holo variant always ships a single production (see
 # variants/holo/productions/index.json), so its button row never draws the
-# "productions" button -- see GridMixin.top_button_rects() in
-# deskwidget_core/grid_layout.py, which this mirrors for the same reason.
-BUTTON_ORDER = [key for key in layout.TOP_BUTTON_ORDER if key != "productions"]
+# "productions" button -- see layout.button_order(), the same helper
+# GridMixin.top_button_rects() calls, so this can never drift from it.
+BUTTON_ORDER = layout.button_order(has_multiple_productions=False)
 
 # How long to let the widget's initial refresh() (network fetch of every
 # talent's live status) settle before the first screenshot, so main.png

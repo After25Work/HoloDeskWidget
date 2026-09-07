@@ -42,8 +42,7 @@ class GridMixin:
     }
 
     def top_button_rects(self):
-        order = layout.TOP_BUTTON_ORDER if self.has_multiple_productions() else \
-            [key for key in layout.TOP_BUTTON_ORDER if key != "productions"]
+        order = layout.button_order(self.has_multiple_productions())
         return layout.top_button_rects(self.width, order)
 
     def top_button_actions(self):

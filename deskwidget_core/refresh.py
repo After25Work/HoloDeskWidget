@@ -95,14 +95,14 @@ class RefreshMixin:
             # closes. Daemon threads are simply abandoned on exit instead.
             semaphore = threading.Semaphore(12)
 
-            def bounded_check(job_prod_id, slot, auto_resolve, name, target):
+            def bounded_check(job_prod_id, slot, auto_resolve, name, slug, target):
                 with semaphore:
-                    self.check_one(job_prod_id, slot, auto_resolve, name, target)
+                    self.check_one(job_prod_id, slot, auto_resolve, name, slug, target)
 
             workers = [threading.Thread(target=bounded_check,
-                                         args=(job_prod_id, slot, auto_resolve, name, target), daemon=True)
+                                         args=(job_prod_id, slot, auto_resolve, name, slug, target), daemon=True)
                        for job_prod_id, slot, auto_resolve in jobs
-                       for name, _, target, _ in slot["targets"]]
+                       for name, slug, target, _ in slot["targets"]]
             for worker in workers:
                 worker.start()
             for worker in workers:
@@ -131,7 +131,7 @@ class RefreshMixin:
             # next periodic tick, so this doesn't create a second loop.
             self.refresh()
 
-    def check_one(self, prod_id, slot, auto_resolve, name, target):
+    def check_one(self, prod_id, slot, auto_resolve, name, slug, target):
         # Operates on the explicit `slot` dict (self.production_data[prod_id])
         # rather than the self.targets/self.states/etc. properties, which
         # always reflect whichever production is active_production *right
@@ -154,8 +154,6 @@ class RefreshMixin:
         # same state as before.
         previous_state = states.get(name)
         try:
-            slug = next(slug for target_name, slug, _, _ in targets
-                        if target_name == name)
             if auto_resolve == "hololivepro" and name not in channel_urls:
                 try:
                     resolved = youtube.resolve_channel_url(slug)
@@ -193,10 +191,10 @@ class RefreshMixin:
                     return
                 with lock:
                     channel_urls[name] = target
-                for index, (target_name, slug, _, unit) in enumerate(targets):
-                    if target_name == name:
-                        targets[index] = (target_name, slug, target, unit)
-                        break
+                    for index, (target_name, target_slug, _, unit) in enumerate(targets):
+                        if target_name == name:
+                            targets[index] = (target_name, target_slug, target, unit)
+                            break
                 try:
                     # attempts=1: this is already the retry after a resolve
                     # + fetch round-trip, so skip fetch_live_info()'s own

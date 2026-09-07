@@ -87,7 +87,14 @@ def _supports_japanese(family_name):
     if not hdc:
         return False
     logfont = _LOGFONTW()
-    logfont.lfFaceName = family_name
+    try:
+        # lfFaceName is a fixed WCHAR[32] (LF_FACESIZE) -- GDI can't address
+        # a family by a name that doesn't fit in it anyway, so treat one
+        # that's too long the same as "can't check, assume no Japanese"
+        # rather than letting ctypes' ValueError crash the font picker.
+        logfont.lfFaceName = family_name
+    except ValueError:
+        return False
     hfont = gdi32.CreateFontIndirectW(ctypes.byref(logfont))
     old_font = gdi32.SelectObject(hdc, hfont)
     try:
