@@ -18,7 +18,7 @@ A Windows desktop widget that keeps the live-stream status of VTuber talents vis
   Right-clicking a card brings up a menu to copy the talent's name or stream title to the clipboard.
 - **Always-on-top, semi-transparent desktop widget**: A persistent, transparent window you can drag by its background to move, and drag by its edges/corners to resize.
 - **LIVE filter**: Narrows the list down to only the talents currently live, and shows their stream titles as a scrolling ticker.
-- **World clock**: Displays the region name and current time for a configurable list of zones (Hawaii/Los Angeles/New York/UTC/Moscow/Dubai/Jakarta/Tokyo by default) alongside the talent list.<br>
+- **World clock**: Displays the region name and current time for a configurable list of zones (Hawaii/Los Angeles/New York/UTC/Central Europe/Dubai/Jakarta/Tokyo by default) alongside the talent list.<br>
   Edit `clock_zones.json` to add, remove, or relabel zones (or rename their regions) without touching code.
 - **Display customization**: Toggle always-on-top, dark/light mode, theme color (palette), font, display language (Japanese/English), and which production tabs are shown (checklist, with "Enable All" / "Disable All" shortcuts) from the top-right buttons or the right-click menu.<br>
   Background opacity and text size are adjustable via sliders.

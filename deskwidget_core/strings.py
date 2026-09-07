@@ -43,7 +43,7 @@ _DEFAULT_CLOCK_ZONES = (
     ("PST", -8, "mdy", ("us", 1, "PDT"), "ロサンゼルス", "Los Angeles"),
     ("EST", -5, "mdy", ("us", 1, "EDT"), "ニューヨーク", "New York"),
     ("UTC", 0, "iso", None, "UTC", "UTC"),
-    ("MSK", 3, "dmy", None, "モスクワ", "Moscow"),
+    ("CET", 1, "dmy", ("eu", 1, "CEST"), "中央ヨーロッパ", "Central Europe"),
     ("GST", 4, "dmy", None, "ドバイ", "Dubai"),
     ("WIB", 7, "dmy", None, "ジャカルタ", "Jakarta"),
     ("JST", 9, "ymd", None, "東京", "Tokyo"),
