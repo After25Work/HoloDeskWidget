@@ -474,8 +474,9 @@ class MenuMixin:
             if event.get("event") == "start":
                 title = event.get("title")
                 suffix = f" - {title}" if title else ""
-                line = f"{timestamp}  {prod_prefix}{name}  ● {self.t('stream_start')}{suffix}"
                 url = event.get("url")
+                url_suffix = f"  {url}" if url else ""
+                line = f"{timestamp}  {prod_prefix}{name}  ● {self.t('stream_start')}{suffix}{url_suffix}"
             else:
                 line = f"{timestamp}  {prod_prefix}{name}  ○ {self.t('stream_end')}"
             listbox.insert(tk.END, line)
