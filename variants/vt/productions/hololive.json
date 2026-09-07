@@ -63,7 +63,7 @@
   {"name": "水宮枢", "unit": "DEV_IS", "slug": "mizumiya-su", "channel_url": "https://www.youtube.com/channel/UCjk2nKmHzgH5Xy-C5qYRd5A"},
   {"name": "輪堂千速", "unit": "DEV_IS", "slug": "rindo-chihaya", "channel_url": "https://www.youtube.com/channel/UCKMWFR6lAstLa7Vbf5dH7ig"},
   {"name": "綺々羅々ヴィヴィ", "unit": "DEV_IS", "slug": "kikirara-vivi", "channel_url": "https://www.youtube.com/channel/UCGzTVXqMQHa4AgJVJIVvtDQ"},
-  {"name": "ホロアナ", "unit": "holoAN", "slug": "holoan-room", "channel_url": "https://www.youtube.com/channel/UCozx5csNhCx1wsVq3SZVkBQ"},
+  {"name": "ホロアナ", "unit": "Other", "slug": "holoan-room", "channel_url": "https://www.youtube.com/channel/UCozx5csNhCx1wsVq3SZVkBQ"},
   {"name": "ACHRORA", "unit": "Other", "slug": "achrora", "channel_url": "https://www.youtube.com/@ACHRORA_official"},
   {"name": "UNIT B", "unit": "Other", "slug": "unit-b", "channel_url": "https://www.youtube.com/@Unit_B_Pre_Debut"}
 ]
