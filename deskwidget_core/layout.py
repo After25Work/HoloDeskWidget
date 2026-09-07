@@ -36,6 +36,16 @@ TOP_BUTTON_WIDTHS = {
 TOP_BUTTON_ORDER = ["close", "fullscreen", "tray", "pin", "font", "lang", "color", "mode", "productions", "filter"]
 
 
+def button_row_delta(button_key):
+    """Width a new top-row button adds to the minimum safe window width --
+    its own width plus one gap. Variant profile.py files add this to their
+    previous min_width when a button is added, instead of hand-picking (and
+    duplicating across variants) a new absolute min_width number -- keeps
+    the bump tied to TOP_BUTTON_WIDTHS/BUTTON_GAP instead of drifting from
+    them, the same reasoning as top_button_rects() itself (see above)."""
+    return TOP_BUTTON_WIDTHS[button_key] + BUTTON_GAP
+
+
 def top_button_rects(width, order=TOP_BUTTON_ORDER):
     rects = {}
     cursor = width - BUTTON_RIGHT_MARGIN

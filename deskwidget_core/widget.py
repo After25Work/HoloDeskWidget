@@ -166,7 +166,11 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.root.after(300, self.refresh)
         self.root.after(1000, self.tick_clock)
         self.root.after(60, self.tick_ticker)
-        self._init_tray()
+        # Deferred like the other startup steps above, rather than run
+        # synchronously here -- PIL's first-run icon render plus the Win32
+        # tray window/message-loop setup (see TrayIcon.__init__'s ready.wait())
+        # would otherwise delay the window's first paint.
+        self.root.after(150, self._init_tray)
 
     def _init_tray(self):
         # Best-effort: a failure here (e.g. Shell_NotifyIconW rejecting the
@@ -197,14 +201,25 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         ]
 
     def _tray_tooltip_text(self):
-        live_count = sum(1 for production in self._visible_productions()
-                          for state in self._production_slot(production["id"])["states"].values()
-                          if state == "live")
-        total_count = sum(len(self._production_slot(production["id"])["targets"])
-                           for production in self._visible_productions())
+        # Dedupe live/error state by talent name the same way _merge_all_slots()
+        # does for the on-screen "All" tab status bar -- a plain per-production
+        # sum here would double-count a talent listed under two enabled
+        # productions instead of matching what's shown on screen.
+        merged_states = {}
+        total_count = 0
+        for production in self._visible_productions():
+            slot = self._production_slot(production["id"])
+            merged_states.update(slot["states"])
+            total_count += len(slot["targets"])
+        live_count = sum(1 for state in merged_states.values() if state == "live")
         return f"{appconfig.app_name()} - {self.t('count', live=live_count, total=total_count)}"
 
     def minimize_to_tray(self):
+        # No tray icon to restore from if _init_tray() failed (or hasn't run
+        # yet) -- hiding the window here would strand the user with no way
+        # back short of killing the process.
+        if self.tray is None:
+            return
         self.root.withdraw()
 
     def restore_from_tray(self):

@@ -436,9 +436,14 @@ class MenuMixin:
         win.geometry("560x420")
         win.configure(bg=panel_hex)
 
-        events = stream_log.load_events(limit=300)
+        # "Today" stats are computed over the full (MAX_ENTRIES-capped) log,
+        # not the 300-newest slice used for the listbox below -- otherwise a
+        # busy day with >300 events across all talents would silently drop
+        # older same-day entries from the count.
+        all_events = stream_log.load_events()
+        events = all_events[:300]
         today = time.strftime("%Y-%m-%d")
-        today_starts = [event for event in events if event.get("event") == "start"
+        today_starts = [event for event in all_events if event.get("event") == "start"
                         and time.strftime("%Y-%m-%d", time.localtime(event.get("ts", 0))) == today]
         counts = {}
         for event in today_starts:
@@ -497,4 +502,4 @@ class MenuMixin:
         close_btn = tk.Label(win, text=self.t("close"), bg=panel_hex, fg=muted_hex,
                              font=("Yu Gothic UI", 9, "underline"), cursor="hand2")
         close_btn.pack(anchor="e", padx=10, pady=(0, 10))
-        close_btn.bind("<Button-1>", lambda event: win.destroy())
+        close_btn.bind("<Button-1>", lambda event: self._close_popup("history_win"))

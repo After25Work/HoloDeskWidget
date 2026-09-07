@@ -243,7 +243,7 @@ class TrayIcon:
         try:
             self._create_window()
             self._add_icon()
-        except OSError as error:
+        except Exception as error:  # noqa: BLE001 -- must always unblock ready.wait()
             self._init_error = error
             ready.set()
             return

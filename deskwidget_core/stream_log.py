@@ -5,6 +5,7 @@ single JSON array so a crash mid-write only ever loses the last unflushed
 line instead of corrupting the whole file.
 """
 import json
+import os
 import threading
 import time
 
@@ -55,8 +56,15 @@ def _trim_locked():
         return
     if len(lines) <= MAX_ENTRIES:
         return
+    # Write to a temp file and rename over the original rather than
+    # write_text()-ing STREAM_LOG_PATH directly -- os.replace() is atomic, so
+    # a crash mid-trim still only ever leaves either the old or the new full
+    # file in place, matching the module docstring's crash-safety guarantee
+    # (a plain in-place write_text() could otherwise leave a truncated file).
+    tmp_path = STREAM_LOG_PATH.with_suffix(".jsonl.tmp")
     try:
-        STREAM_LOG_PATH.write_text("\n".join(lines[-MAX_ENTRIES:]) + "\n", encoding="utf-8")
+        tmp_path.write_text("\n".join(lines[-MAX_ENTRIES:]) + "\n", encoding="utf-8")
+        os.replace(tmp_path, STREAM_LOG_PATH)
     except OSError as error:
         log_error("stream_log", error)
 
@@ -66,10 +74,11 @@ def load_events(limit=None):
     e.g. truncated by a crash mid-write, see the module docstring) is skipped
     rather than aborting the whole read.
     """
-    try:
-        lines = STREAM_LOG_PATH.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
+    with _lock:
+        try:
+            lines = STREAM_LOG_PATH.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
     events = []
     for line in lines:
         try:

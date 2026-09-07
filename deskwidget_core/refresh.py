@@ -242,11 +242,15 @@ class RefreshMixin:
 
     @staticmethod
     def _log_state_transition(prod_id, name, previous_state, new_state, title=None, url=None):
-        # Only a transition into/out of "live" is a meaningful stream
-        # boundary -- offline<->error churn (a talent with no scheduled
-        # stream hitting an occasional fetch error) is noise the history
-        # viewer has no use for.
+        # Only a transition into "live" or a *confirmed* drop out of it is a
+        # meaningful stream boundary. new_state == "error" means the fetch
+        # itself failed (a transient network hiccup, most likely) -- it says
+        # nothing about whether the stream actually ended, so treating it as
+        # an "end" here would log a false end+restart pair around every
+        # ordinary blip on a channel that's still live. offline<->error
+        # churn (a talent with no scheduled stream hitting an occasional
+        # fetch error) is noise the history viewer has no use for either way.
         if new_state == "live" and previous_state != "live":
             stream_log.record_event(prod_id, name, "start", title, url)
-        elif new_state != "live" and previous_state == "live":
+        elif new_state == "offline" and previous_state == "live":
             stream_log.record_event(prod_id, name, "end")
