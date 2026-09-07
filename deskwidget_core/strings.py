@@ -212,6 +212,7 @@ STRINGS = {
         "stream_end": "配信終了",
         "stream_history_today": "本日の配信開始: {count}件",
         "stream_history_empty": "履歴はまだありません",
+        "stream_history_hint": "ダブルクリックでYouTubeを開く",
     },
     "en": {
         "clock_category": "Current Time",
@@ -255,6 +256,7 @@ STRINGS = {
         "stream_end": "Live End",
         "stream_history_today": "Today's live starts: {count}",
         "stream_history_empty": "No history yet",
+        "stream_history_hint": "Double-click to open on YouTube",
     },
 }
 

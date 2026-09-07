@@ -22,7 +22,7 @@ _lock = threading.Lock()
 _writes_since_trim = 0
 
 
-def record_event(production_id, name, event, title=None):
+def record_event(production_id, name, event, title=None, url=None):
     """event is "start" or "end". Called from refresh_worker()'s background
     threads (one per talent), so the file write itself is guarded by _lock --
     multiple talents can transition in the same refresh cycle.
@@ -31,6 +31,8 @@ def record_event(production_id, name, event, title=None):
     entry = {"ts": time.time(), "production_id": production_id, "name": name, "event": event}
     if title:
         entry["title"] = title
+    if url:
+        entry["url"] = url
     line = json.dumps(entry, ensure_ascii=False)
     with _lock:
         try:

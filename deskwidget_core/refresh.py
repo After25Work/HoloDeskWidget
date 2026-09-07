@@ -225,7 +225,8 @@ class RefreshMixin:
                 else:
                     live_titles.pop(name, None)
                 states[name] = "live"
-                self._log_state_transition(prod_id, name, previous_state, "live", live_titles.get(name))
+                self._log_state_transition(prod_id, name, previous_state, "live",
+                                            live_titles.get(name), live_urls.get(name))
             else:
                 live_urls.pop(name, None)
                 live_titles.pop(name, None)
@@ -240,12 +241,12 @@ class RefreshMixin:
             self._log_state_transition(prod_id, name, previous_state, "error")
 
     @staticmethod
-    def _log_state_transition(prod_id, name, previous_state, new_state, title=None):
+    def _log_state_transition(prod_id, name, previous_state, new_state, title=None, url=None):
         # Only a transition into/out of "live" is a meaningful stream
         # boundary -- offline<->error churn (a talent with no scheduled
         # stream hitting an occasional fetch error) is noise the history
         # viewer has no use for.
         if new_state == "live" and previous_state != "live":
-            stream_log.record_event(prod_id, name, "start", title)
+            stream_log.record_event(prod_id, name, "start", title, url)
         elif new_state != "live" and previous_state == "live":
             stream_log.record_event(prod_id, name, "end")

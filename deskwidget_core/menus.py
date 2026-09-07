@@ -4,6 +4,7 @@ follows the same overrideredirect-Toplevel-anchored-under-its-button pattern.
 """
 import time
 import tkinter as tk
+import webbrowser
 
 from . import appconfig, stream_log
 from .fonts import family_display_name, list_installed_fonts, set_font_family
@@ -463,20 +464,34 @@ class MenuMixin:
         scrollbar.config(command=listbox.yview)
 
         multi = self.has_multiple_productions()
+        event_urls = []
         for event in events:
             timestamp = time.strftime("%m/%d %H:%M:%S", time.localtime(event.get("ts", 0)))
             production = self._productions_by_id.get(event.get("production_id"))
             prod_prefix = f"[{production_display_name(production, self.lang)}] " if multi and production else ""
             name = event.get("name", "?")
+            url = None
             if event.get("event") == "start":
                 title = event.get("title")
                 suffix = f" - {title}" if title else ""
                 line = f"{timestamp}  {prod_prefix}{name}  ● {self.t('stream_start')}{suffix}"
+                url = event.get("url")
             else:
                 line = f"{timestamp}  {prod_prefix}{name}  ○ {self.t('stream_end')}"
             listbox.insert(tk.END, line)
+            event_urls.append(url)
         if not events:
             listbox.insert(tk.END, self.t("stream_history_empty"))
+
+        def open_selected_url(_event):
+            index = listbox.nearest(_event.y)
+            if 0 <= index < len(event_urls) and event_urls[index]:
+                webbrowser.open(event_urls[index], new=2)
+
+        listbox.bind("<Double-Button-1>", open_selected_url)
+
+        tk.Label(win, text=self.t("stream_history_hint"), bg=panel_hex, fg=muted_hex,
+                font=("Yu Gothic UI", 8)).pack(anchor="w", padx=10, pady=(0, 4))
 
         close_btn = tk.Label(win, text=self.t("close"), bg=panel_hex, fg=muted_hex,
                              font=("Yu Gothic UI", 9, "underline"), cursor="hand2")
