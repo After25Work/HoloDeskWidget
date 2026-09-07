@@ -1,6 +1,4 @@
-import json
-
-from .paths import ROOT
+from .paths import ROOT, load_json
 
 PRODUCTIONS_DIR = ROOT / "productions"
 PRODUCTIONS_INDEX = PRODUCTIONS_DIR / "index.json"
@@ -23,10 +21,7 @@ _FALLBACK_PRODUCTION = {
 
 
 def load_productions():
-    try:
-        data = json.loads(PRODUCTIONS_INDEX.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        data = []
+    data = load_json(PRODUCTIONS_INDEX, [])
     productions = [
         entry for entry in (data if isinstance(data, list) else [])
         if isinstance(entry, dict) and entry.get("id") and entry.get("file")
@@ -44,10 +39,7 @@ def production_display_name(production, lang):
 
 
 def load_talents_raw(filename):
-    try:
-        return json.loads((PRODUCTIONS_DIR / filename).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
+    return load_json(PRODUCTIONS_DIR / filename, [])
 
 
 def load_targets(production):

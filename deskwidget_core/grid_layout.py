@@ -23,6 +23,14 @@ STATUS_BAR_HEIGHT = 37
 STATUS_SLIDER_GAP = 5
 SLIDER_GRID_GAP = 22
 
+# Shared by build_grid_layout() and compute_grid() -- these two must never
+# disagree, since compute_grid() searches for a scale/column-count pair that
+# build_grid_layout() (given that same width) will actually lay out within
+# the available height; a mismatched margin/column-pitch pair here would let
+# the two silently drift apart on some window sizes.
+GRID_MARGIN = 40
+TARGET_COL_WIDTH = 110
+
 
 class GridMixin:
     _RESIZE_MARGIN = 8
@@ -225,7 +233,7 @@ class GridMixin:
         # just sit empty on the right instead of giving compute_grid() a
         # wider (and therefore taller-scaling) pitch to size the shared label
         # font against.
-        margin, target_col_width = 40, 110
+        margin, target_col_width = GRID_MARGIN, TARGET_COL_WIDTH
         available = self.width - margin - 40
         natural_cols = max(1, int(available // target_col_width))
         if num_cols is None:
@@ -355,7 +363,7 @@ class GridMixin:
         # itself always stays top-aligned, like an ordinary list.
         grid_top = self.grid_top()
         available_height = max(1, self.height - grid_top - 90)
-        margin, target_col_width = 40, 110
+        margin, target_col_width = GRID_MARGIN, TARGET_COL_WIDTH
         available_width = self.width - margin - 40
         natural_cols = max(1, int(available_width // target_col_width))
 

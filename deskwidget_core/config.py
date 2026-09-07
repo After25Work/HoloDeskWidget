@@ -2,7 +2,7 @@ import json
 
 from . import appconfig
 from .fonts import DEFAULT_FONT_FAMILY
-from .paths import SETTINGS_PATH, log_error
+from .paths import SETTINGS_PATH, load_json, log_error
 from .strings import STRINGS
 from .theme import THEME_PALETTE
 
@@ -66,10 +66,7 @@ def load_settings():
     # survive a talent-list refresh/replace, and vice versa. Falls back to
     # defaults whole-cloth on a missing/corrupt file rather than partially
     # applying it.
-    try:
-        data = json.loads(SETTINGS_PATH.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        data = {}
+    data = load_json(SETTINGS_PATH, {})
     settings = dict(DEFAULT_SETTINGS)
     if isinstance(data, dict):
         settings.update({key: data[key] for key in DEFAULT_SETTINGS if key in data})

@@ -1,3 +1,4 @@
+import json
 import logging
 import sys
 import time
@@ -37,6 +38,17 @@ _handler.setFormatter(logging.Formatter("%(message)s"))
 _logger = logging.getLogger("deskwidget_core")
 _logger.setLevel(logging.ERROR)
 _logger.addHandler(_handler)
+
+
+def load_json(path, default):
+    # Shared by every settings/productions/talent-list reader in the app: a
+    # missing file (first run) and a corrupt one (hand-edited, truncated by a
+    # crash mid-write) are both treated as "fall back to default" rather than
+    # letting json.loads()/OSError propagate and crash startup.
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
 
 
 def log_error(name, error):
