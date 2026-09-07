@@ -13,6 +13,7 @@ BUTTON_RIGHT_MARGIN = 40
 TOP_BUTTON_WIDTHS = {
     "close": 32,
     "fullscreen": 32,
+    "tray": 32,
     "pin": 60,  # wider than the rest to fit "最前面"/"TopMost"
     "lang": 32,
     "color": 32,
@@ -25,11 +26,14 @@ TOP_BUTTON_WIDTHS = {
 # filter's right on screen -- this list is walked right-to-left (see
 # top_button_rects() below), so the LAST key ends up leftmost. Likewise
 # "font" sits right after "color" so the two appearance pickers stay
-# adjacent on screen. A variant with only one production (see
+# adjacent on screen. "tray" sits right after "fullscreen" so the row reads
+# close/fullscreen/minimize-to-tray left-to-right, the same
+# close-maximize-minimize grouping as a normal window's own title-bar
+# buttons. A variant with only one production (see
 # GridMixin.top_button_rects()) drops "productions" from the order it
 # actually passes in, which shifts every button to its left back in to fill
 # the gap instead of leaving one.
-TOP_BUTTON_ORDER = ["close", "fullscreen", "pin", "lang", "color", "font", "mode", "productions", "filter"]
+TOP_BUTTON_ORDER = ["close", "fullscreen", "tray", "pin", "lang", "color", "font", "mode", "productions", "filter"]
 
 
 def top_button_rects(width, order=TOP_BUTTON_ORDER):

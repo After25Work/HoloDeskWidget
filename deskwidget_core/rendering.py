@@ -80,6 +80,7 @@ class RenderingMixin:
         draw.rounded_rectangle(close_rect_btn, 8, fill=self.tint(colors["neutral_btn"]) + (255,))
         self.draw_centered(draw, close_rect_btn, "×", font(18, True), self.text_color(colors["text"]))
         self.draw_fullscreen_button(draw, btn["fullscreen"], colors)
+        self.draw_tray_button(draw, btn["tray"], colors)
         self._draw_toggle_button(draw, colors, accent, btn["pin"], self.t("pin"), self.topmost)
         lang_rect = btn["lang"]
         draw.rounded_rectangle(lang_rect, 8, fill=self.tint(colors["neutral_btn"]) + (255,))
@@ -658,6 +659,20 @@ class RenderingMixin:
             x, y = cx + sx * offset, cy + sy * offset
             draw.line((x, y, x - sx * arm, y), fill=icon_color, width=2)
             draw.line((x, y, x, y - sy * arm), fill=icon_color, width=2)
+
+    def draw_tray_button(self, draw, rect, colors):
+        # "Minimize to tray": a downward arrow dropping onto a tray line --
+        # not a toggle (there's no "in the tray" visual state to reflect once
+        # the window is withdrawn), so this always uses the same plain
+        # neutral fill as e.g. the close button rather than pin/fullscreen's
+        # accent-when-active treatment.
+        draw.rounded_rectangle(rect, 8, fill=self.tint(colors["neutral_btn"]) + (255,))
+        icon_color = self.text_color(colors["text"])
+        cx, cy = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
+        draw.line((cx, cy - 7, cx, cy + 2), fill=icon_color, width=2)
+        draw.line((cx, cy + 2, cx - 4, cy - 2), fill=icon_color, width=2)
+        draw.line((cx, cy + 2, cx + 4, cy - 2), fill=icon_color, width=2)
+        draw.line((cx - 6, cy + 7, cx + 6, cy + 7), fill=icon_color, width=2)
 
     def text_color(self, color):
         return tuple(color[:3])

@@ -16,9 +16,10 @@ PROFILE = {
     # note on "title" in deskwidget_core/appconfig.py). Kept populated anyway
     # so the profile still satisfies appconfig's contract.
     "title": {"ja": "VTDeskWidget", "en": "VTDeskWidget"},
-    # 612 (not 568) so the extra productions-picker button in the top row
+    # 656 (not 612) so the extra minimize-to-tray button in the top row
     # never overlaps the title text at minimum width, the same reasoning
-    # that widened this from 440 to 480 to 524 to 568 as each earlier top
-    # button (the fullscreen toggle, the live-only filter) was added.
-    "min_width": 612,
+    # that widened this from 440 to 480 to 524 to 568 to 612 as each earlier
+    # top button (the productions picker, the fullscreen toggle, the
+    # live-only filter) was added.
+    "min_width": 656,
 }

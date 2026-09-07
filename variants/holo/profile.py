@@ -12,9 +12,10 @@ PROFILE = {
     "default_accent": (39, 199, 255),
     "variant_root": Path(__file__).resolve().parent,
     "title": {"ja": "ホロライブ", "en": "hololive"},
-    # 568 (not 524) so the extra font-picker button in the top row never
+    # 612 (not 568) so the extra minimize-to-tray button in the top row never
     # overlaps the "LIVE STATUS" title text at minimum width, the same
-    # reasoning that widened this from 440 to 480 to 524 as each earlier top
-    # button (the live-only filter, the fullscreen toggle) was added.
-    "min_width": 568,
+    # reasoning that widened this from 440 to 480 to 524 to 568 as each
+    # earlier top button (the live-only filter, the fullscreen toggle) was
+    # added.
+    "min_width": 612,
 }
