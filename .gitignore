@@ -9,3 +9,5 @@ __pycache__/
 /dist/
 /release/
 settings.json
+tray_icon.ico
+stream_history.jsonl

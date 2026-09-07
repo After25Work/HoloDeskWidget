@@ -2,9 +2,10 @@
 productions checklist, and the right-click context menu. Each open_*()
 follows the same overrideredirect-Toplevel-anchored-under-its-button pattern.
 """
+import time
 import tkinter as tk
 
-from . import appconfig
+from . import appconfig, stream_log
 from .fonts import family_display_name, list_installed_fonts, set_font_family
 from .talents import ALL_PRODUCTION_ID, production_display_name
 from .theme import THEME_PALETTE
@@ -402,6 +403,9 @@ class MenuMixin:
                                   command=lambda n=name: self.select_font_family(n))
         menu.add_cascade(label=self.t("font_family"), menu=font_menu)
         menu.add_separator()
+        menu.add_command(label=self.t("stream_history"), command=self.open_history_window)
+        menu.add_command(label=self.t("tray_minimize"), command=self.minimize_to_tray)
+        menu.add_separator()
         menu.add_command(label=self.t("refresh"), command=self.refresh)
         menu.add_command(label=self.t("close"), command=self.close)
         menu.add_separator()
@@ -410,3 +414,71 @@ class MenuMixin:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
             menu.grab_release()
+
+    def open_history_window(self):
+        # A plain (OS-decorated) Toplevel rather than this file's usual
+        # overrideredirect-popup pattern: this is a scrollable content window
+        # the user may want to keep open and resize/move around, not a quick
+        # anchored picker.
+        if self.history_win is not None and self.history_win.winfo_exists():
+            self.history_win.deiconify()
+            self.history_win.lift()
+            return
+        colors = self.theme_colors()
+        panel_hex = self._hex(self.tint(colors["panel"][:3]))
+        text_hex = self._hex(colors["text"])
+        muted_hex = self._hex(colors["muted"])
+
+        win = tk.Toplevel(self.root)
+        self.history_win = win
+        win.title(self.t("stream_history"))
+        win.geometry("560x420")
+        win.configure(bg=panel_hex)
+
+        events = stream_log.load_events(limit=300)
+        today = time.strftime("%Y-%m-%d")
+        today_starts = [event for event in events if event.get("event") == "start"
+                        and time.strftime("%Y-%m-%d", time.localtime(event.get("ts", 0))) == today]
+        counts = {}
+        for event in today_starts:
+            counts[event.get("name", "?")] = counts.get(event.get("name", "?"), 0) + 1
+        top = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)[:5]
+        summary = self.t("stream_history_today", count=len(today_starts))
+        if top:
+            summary += "  " + " / ".join(f"{name} x{count}" for name, count in top)
+
+        tk.Label(win, text=summary, bg=panel_hex, fg=text_hex, anchor="w", justify="left",
+                wraplength=540, font=("Yu Gothic UI", 9, "bold")).pack(fill="x", padx=10, pady=(10, 4))
+
+        list_frame = tk.Frame(win, bg=panel_hex)
+        list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 6))
+        scrollbar = tk.Scrollbar(list_frame)
+        scrollbar.pack(side="right", fill="y")
+        listbox = tk.Listbox(
+            list_frame, bg=panel_hex, fg=text_hex, activestyle="none",
+            highlightthickness=0, borderwidth=0, font=("Yu Gothic UI", 9),
+            yscrollcommand=scrollbar.set,
+        )
+        listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=listbox.yview)
+
+        multi = self.has_multiple_productions()
+        for event in events:
+            timestamp = time.strftime("%m/%d %H:%M:%S", time.localtime(event.get("ts", 0)))
+            production = self._productions_by_id.get(event.get("production_id"))
+            prod_prefix = f"[{production_display_name(production, self.lang)}] " if multi and production else ""
+            name = event.get("name", "?")
+            if event.get("event") == "start":
+                title = event.get("title")
+                suffix = f" - {title}" if title else ""
+                line = f"{timestamp}  {prod_prefix}{name}  ● {self.t('stream_start')}{suffix}"
+            else:
+                line = f"{timestamp}  {prod_prefix}{name}  ○ {self.t('stream_end')}"
+            listbox.insert(tk.END, line)
+        if not events:
+            listbox.insert(tk.END, self.t("stream_history_empty"))
+
+        close_btn = tk.Label(win, text=self.t("close"), bg=panel_hex, fg=muted_hex,
+                             font=("Yu Gothic UI", 9, "underline"), cursor="hand2")
+        close_btn.pack(anchor="e", padx=10, pady=(0, 10))
+        close_btn.bind("<Button-1>", lambda event: win.destroy())

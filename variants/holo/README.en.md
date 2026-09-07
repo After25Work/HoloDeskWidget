@@ -15,6 +15,8 @@ A Windows desktop widget that keeps the live-stream status of hololive talents v
 - **Display customization**: Toggle always-on-top, dark/light mode, theme color (palette), and display language (Japanese/English) from the top-right buttons or the right-click menu. Background opacity and text size are adjustable via sliders.
 - **Settings persistence**: Window position/size, language, theme, and other personal settings are saved automatically to `settings.json` and restored on the next launch.
 - **Automatic channel resolution**: On startup, resolves each talent's YouTube channel from the hololive official site's talent page, falling back to `channel_url` in `productions/hololive.json` only if that resolution fails.
+- **System tray residency**: "Minimize to Tray" in the right-click menu hides the window while keeping the app running in the background. Left-click the tray icon to bring the window back, or right-click it for a "Show"/"Exit" menu.
+- **Stream history**: Automatically records each talent's live start/end times; the right-click menu's "Stream History" shows a recent event log plus today's live-start count.
 
 ## Screenshots
 
@@ -58,6 +60,8 @@ This repository builds two apps -- HoloDeskWidget and its multi-production sibli
   - `paths.py` — path resolution and logging (size-capped rotation)
   - `single_instance.py` — prevents duplicate instances (Win32 mutex)
   - `appconfig.py` — holder for the per-variant values (app name, accent color, version, ...) each variant supplies
+  - `tray.py` — system tray icon (Shell_NotifyIcon, implemented directly via ctypes)
+  - `stream_log.py` — records/reads live-start and live-end events (`stream_history.jsonl`)
 - `variants/holo/` — everything specific to HoloDeskWidget
   - `profile.py` — app name, accent color, version, etc. handed to `appconfig`
   - `version.py` — version number (shown in the right-click menu)

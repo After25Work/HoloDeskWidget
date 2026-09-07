@@ -25,6 +25,8 @@ A Windows desktop widget that keeps the live-stream status of VTuber talents vis
 - **Settings persistence**: Window position/size, language, theme, font, active/shown production tabs, and other personal settings are saved automatically to `settings.json` and restored on the next launch.
 - **Automatic channel resolution (hololive tab only)**: On startup, resolves each hololive talent's YouTube channel from the hololive official site's talent page, falling back to that talent's `channel_url` only if resolution fails.<br>
   Other productions don't have a known official site to scrape, so they always use the `channel_url` given in their JSON file directly.
+- **System tray residency**: "Minimize to Tray" in the right-click menu hides the window while keeping the app running in the background. Left-click the tray icon to bring the window back, or right-click it for a "Show"/"Exit" menu.
+- **Stream history**: Automatically records each talent's live start/end times (tagged with its production); the right-click menu's "Stream History" shows a recent event log plus today's live-start count.
 
 ## Screenshots
 
@@ -77,6 +79,8 @@ This repository builds two apps -- VTDeskWidget and its single-production siblin
   - `paths.py` — path resolution and logging (size-capped rotation)
   - `single_instance.py` — prevents duplicate instances (Win32 mutex)
   - `appconfig.py` — holder for the per-variant values (app name, accent color, version, ...) each variant supplies
+  - `tray.py` — system tray icon (Shell_NotifyIcon, implemented directly via ctypes)
+  - `stream_log.py` — records/reads live-start and live-end events (`stream_history.jsonl`)
 - `variants/vt/` — everything specific to VTDeskWidget
   - `profile.py` — app name, accent color, version, etc. handed to `appconfig`
   - `version.py` — version number (shown in the right-click menu)

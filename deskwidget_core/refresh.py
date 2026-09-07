@@ -11,7 +11,7 @@ import tkinter as tk
 import webbrowser
 from urllib.error import HTTPError
 
-from . import youtube
+from . import stream_log, youtube
 from .paths import log_error
 from .talents import ALL_PRODUCTION_ID
 
@@ -79,10 +79,10 @@ class RefreshMixin:
                 # switch_production() does when the "All" tab is entered --
                 # so this can read production_data directly without racing a
                 # lazy _production_slot() create from this background thread.
-                jobs = [(self.production_data[production["id"]], production.get("auto_resolve"))
+                jobs = [(production["id"], self.production_data[production["id"]], production.get("auto_resolve"))
                         for production in self._visible_productions()]
             else:
-                jobs = [(self.production_data[prod_id], self._productions_by_id[prod_id].get("auto_resolve"))]
+                jobs = [(prod_id, self.production_data[prod_id], self._productions_by_id[prod_id].get("auto_resolve"))]
             # Plain daemon threads instead of ThreadPoolExecutor: its worker
             # threads register with concurrent.futures' own atexit hook and
             # get joined before the interpreter is allowed to exit, so a
@@ -95,12 +95,13 @@ class RefreshMixin:
             # closes. Daemon threads are simply abandoned on exit instead.
             semaphore = threading.Semaphore(12)
 
-            def bounded_check(slot, auto_resolve, name, target):
+            def bounded_check(job_prod_id, slot, auto_resolve, name, target):
                 with semaphore:
-                    self.check_one(slot, auto_resolve, name, target)
+                    self.check_one(job_prod_id, slot, auto_resolve, name, target)
 
-            workers = [threading.Thread(target=bounded_check, args=(slot, auto_resolve, name, target), daemon=True)
-                       for slot, auto_resolve in jobs
+            workers = [threading.Thread(target=bounded_check,
+                                         args=(job_prod_id, slot, auto_resolve, name, target), daemon=True)
+                       for job_prod_id, slot, auto_resolve in jobs
                        for name, _, target, _ in slot["targets"]]
             for worker in workers:
                 worker.start()
@@ -116,6 +117,8 @@ class RefreshMixin:
 
     def refresh_complete(self, prod_id):
         self.refresh_in_progress = False
+        if self.tray is not None:
+            self.tray.update_tooltip(self._tray_tooltip_text())
         if prod_id == self.active_production:
             self.last_updated = time.strftime("%H:%M:%S")
             self.render()
@@ -128,7 +131,7 @@ class RefreshMixin:
             # next periodic tick, so this doesn't create a second loop.
             self.refresh()
 
-    def check_one(self, slot, auto_resolve, name, target):
+    def check_one(self, prod_id, slot, auto_resolve, name, target):
         # Operates on the explicit `slot` dict (self.production_data[prod_id])
         # rather than the self.targets/self.states/etc. properties, which
         # always reflect whichever production is active_production *right
@@ -140,6 +143,12 @@ class RefreshMixin:
         targets, states, channel_urls, live_urls, live_titles = (
             slot["targets"], slot["states"], slot["channel_urls"],
             slot["live_urls"], slot["live_titles"])
+        # Snapshotted once up front: check_one() only ever lands on one of the
+        # states[name] = ... assignments below per call, so this alone is
+        # enough to tell a real start/end transition (see
+        # _log_state_transition()) from a refresh that just reconfirms the
+        # same state as before.
+        previous_state = states.get(name)
         try:
             slug = next(slug for target_name, slug, _, _ in targets
                         if target_name == name)
@@ -216,13 +225,27 @@ class RefreshMixin:
                 else:
                     live_titles.pop(name, None)
                 states[name] = "live"
+                self._log_state_transition(prod_id, name, previous_state, "live", live_titles.get(name))
             else:
                 live_urls.pop(name, None)
                 live_titles.pop(name, None)
                 states[name] = "offline"
+                self._log_state_transition(prod_id, name, previous_state, "offline")
         except (HTTPError, OSError, UnicodeError, ValueError,
                 youtube.ChannelNotFoundError) as error:
             states[name] = "error"
             live_urls.pop(name, None)
             live_titles.pop(name, None)
             log_error(name, error)
+            self._log_state_transition(prod_id, name, previous_state, "error")
+
+    @staticmethod
+    def _log_state_transition(prod_id, name, previous_state, new_state, title=None):
+        # Only a transition into/out of "live" is a meaningful stream
+        # boundary -- offline<->error churn (a talent with no scheduled
+        # stream hitting an occasional fetch error) is noise the history
+        # viewer has no use for.
+        if new_state == "live" and previous_state != "live":
+            stream_log.record_event(prod_id, name, "start", title)
+        elif new_state != "live" and previous_state == "live":
+            stream_log.record_event(prod_id, name, "end")

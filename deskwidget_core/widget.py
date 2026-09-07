@@ -3,6 +3,7 @@ import time
 import tkinter as tk
 from typing import Optional, Tuple
 
+from . import appconfig
 from .config import (
     DEFAULT_HEIGHT,
     DEFAULT_SETTINGS,
@@ -18,9 +19,10 @@ from .fonts import set_font_family
 from .grid_layout import GridMixin
 from .interaction import InteractionMixin
 from .menus import MenuMixin
-from .paths import WINDOW_TITLE
+from .paths import ROOT, WINDOW_TITLE, log_error
 from .rendering import RenderingMixin
 from .refresh import RefreshMixin
+from .single_instance import bring_to_front
 from .strings import english_name
 from .talents import (
     ALL_PRODUCTION,
@@ -30,6 +32,7 @@ from .talents import (
     production_display_name,
 )
 from .theme import KEY_COLOR
+from .tray import TrayIcon, build_icon_file
 
 # Declared once at module scope, argtypes/restype pinned explicitly — same
 # convention as single_instance.py's own user32 bindings, and for the same
@@ -107,6 +110,8 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.palette_win: Optional[tk.Toplevel] = None
         self.font_win: Optional[tk.Toplevel] = None
         self.productions_win: Optional[tk.Toplevel] = None
+        self.history_win: Optional[tk.Toplevel] = None
+        self.tray: Optional[TrayIcon] = None
         self._production_menu_vars = []
         self.surface: Optional[tk.Label] = None
         self.drag_origin: Optional[Tuple[int, int, int, int]] = None
@@ -161,6 +166,63 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.root.after(300, self.refresh)
         self.root.after(1000, self.tick_clock)
         self.root.after(60, self.tick_ticker)
+        self._init_tray()
+
+    def _init_tray(self):
+        # Best-effort: a failure here (e.g. Shell_NotifyIconW rejecting the
+        # call) just means no tray icon rather than a crash on startup --
+        # "minimize to tray" degrades to a plain hide, and relaunching the
+        # exe still brings the hidden window back via single_instance.py's
+        # own find-and-restore path.
+        try:
+            icon_path = ROOT / "tray_icon.ico"
+            build_icon_file(icon_path, appconfig.default_accent())
+            self.tray = TrayIcon(
+                tooltip=appconfig.app_name(),
+                icon_path=icon_path,
+                menu_items_provider=self._tray_menu_items,
+                on_activate=lambda: self.root.after(0, self.restore_from_tray),
+            )
+        except OSError as error:
+            log_error("tray_init", error)
+            self.tray = None
+
+    def _tray_menu_items(self):
+        # Built fresh on every right-click (not once at startup) so the
+        # labels always match the language active right now -- same
+        # convention as show_context_menu()'s own menus.
+        return [
+            (self.t("tray_show"), lambda: self.root.after(0, self.restore_from_tray)),
+            (self.t("tray_exit"), lambda: self.root.after(0, self.close)),
+        ]
+
+    def _tray_tooltip_text(self):
+        live_count = sum(1 for production in self._visible_productions()
+                          for state in self._production_slot(production["id"])["states"].values()
+                          if state == "live")
+        total_count = sum(len(self._production_slot(production["id"])["targets"])
+                           for production in self._visible_productions())
+        return f"{appconfig.app_name()} - {self.t('count', live=live_count, total=total_count)}"
+
+    def minimize_to_tray(self):
+        self.root.withdraw()
+
+    def restore_from_tray(self):
+        self.root.deiconify()
+        # deiconify() alone just unhides the window -- it doesn't reliably
+        # bring it above every other app's windows or give it real input
+        # focus (Tk's lift()/focus_force() are both requests Windows is free
+        # to ignore for a background process). ShowWindow+SetForegroundWindow
+        # is the same Win32-level nudge single_instance.py already relies on
+        # to bring this same window forward from a second launch, and it
+        # works here for the same reason: we're handling a real mouse click
+        # (via the tray icon), so Windows' foreground-switching lock doesn't
+        # block it.
+        hwnd = _user32.GetParent(self.root.winfo_id())
+        if hwnd:
+            bring_to_front(hwnd)
+        self.root.lift()
+        self.root.focus_force()
 
     def has_multiple_productions(self):
         # Drives every "is there a tab strip / productions picker at all"
@@ -433,6 +495,9 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         }
 
     def close(self):
+        if self.tray is not None:
+            self.tray.destroy()
+            self.tray = None
         save_settings(self.current_settings())
         if self.root.winfo_exists():
             self.root.destroy()
