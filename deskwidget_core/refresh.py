@@ -259,7 +259,12 @@ class RefreshMixin:
         # ordinary blip on a channel that's still live. offline<->error
         # churn (a talent with no scheduled stream hitting an occasional
         # fetch error) is noise the history viewer has no use for either way.
-        if new_state == "live" and previous_state != "live":
+        # previous_state == "unknown" is _production_slot()'s seed value for
+        # every talent at the start of each app session (never a real
+        # observed state) -- excluding it here keeps a restart while someone
+        # is already live from logging a false "start" for a stream that's
+        # actually been running since before this session began.
+        if new_state == "live" and previous_state not in ("live", "unknown"):
             stream_log.record_event(prod_id, name, "start", title, url)
         elif new_state == "offline" and previous_state == "live":
             stream_log.record_event(prod_id, name, "end")
