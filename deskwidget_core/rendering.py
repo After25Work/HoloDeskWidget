@@ -618,11 +618,26 @@ class RenderingMixin:
             draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=self.text_color(color))
 
     def draw_font_button(self, draw, rect, colors):
-        # "Aa" rendered in the currently-selected font family itself, so the
-        # button doubles as a live preview of the active choice rather than
-        # a generic icon.
+        # A big "A" next to a small "a" -- the conventional font-picker glyph
+        # (Word, Google Docs, Figma all use it) -- rendered in the
+        # currently-selected font family itself, so the button doubles as a
+        # live preview of the active choice. A uniform-size "Aa" (the
+        # previous icon here) reads as plain text and blends in next to this
+        # row's actual text-label buttons (EN, 最前面) instead of standing
+        # out as an icon.
         draw.rounded_rectangle(rect, 8, fill=self.tint(colors["neutral_btn"]) + (255,))
-        self.draw_centered(draw, rect, "Aa", font(13, True), self.text_color(colors["text"]))
+        color = self.text_color(colors["text"])
+        big_font, small_font = font(15, True), font(10, True)
+        big_bbox, small_bbox = big_font.getbbox("A"), small_font.getbbox("a")
+        big_w, small_w = big_bbox[2] - big_bbox[0], small_bbox[2] - small_bbox[0]
+        gap = 1
+        left = rect[0] + ((rect[2] - rect[0]) - (big_w + gap + small_w)) // 2
+        # Baselines aligned (not centers) so the two letters sit together
+        # like real text, the way every reference icon above does it.
+        baseline = rect[1] + ((rect[3] - rect[1]) + (big_bbox[3] - big_bbox[1])) // 2
+        draw.text((left - big_bbox[0], baseline - big_bbox[3]), "A", font=big_font, fill=color)
+        small_x = left + big_w + gap
+        draw.text((small_x - small_bbox[0], baseline - small_bbox[3]), "a", font=small_font, fill=color)
 
     def draw_mode_button(self, draw, rect, colors):
         # Icon reflects the CURRENT mode (moon while dark, sun while light) so
@@ -661,18 +676,21 @@ class RenderingMixin:
             draw.line((x, y, x, y - sy * arm), fill=icon_color, width=2)
 
     def draw_tray_button(self, draw, rect, colors):
-        # "Minimize to tray": a downward arrow dropping onto a tray line --
-        # not a toggle (there's no "in the tray" visual state to reflect once
-        # the window is withdrawn), so this always uses the same plain
-        # neutral fill as e.g. the close button rather than pin/fullscreen's
-        # accent-when-active treatment.
+        # "Minimize to tray": an underscore sitting near the bottom of the
+        # icon (not a centered dash), the same glyph a normal window's own
+        # minimize button uses, so together with fullscreen and close
+        # alongside it this reads as the familiar minimize/maximize/close
+        # trio (see TOP_BUTTON_ORDER's comment) instead of a bespoke icon
+        # that read as "download" (arrow dropping onto a line) rather than
+        # "minimize". Not a toggle (there's no "in the tray" visual state to
+        # reflect once the window is withdrawn), so this always uses the
+        # same plain neutral fill as e.g. the close button rather than
+        # pin/fullscreen's accent-when-active treatment.
         draw.rounded_rectangle(rect, 8, fill=self.tint(colors["neutral_btn"]) + (255,))
         icon_color = self.text_color(colors["text"])
-        cx, cy = (rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2
-        draw.line((cx, cy - 7, cx, cy + 2), fill=icon_color, width=2)
-        draw.line((cx, cy + 2, cx - 4, cy - 2), fill=icon_color, width=2)
-        draw.line((cx, cy + 2, cx + 4, cy - 2), fill=icon_color, width=2)
-        draw.line((cx - 6, cy + 7, cx + 6, cy + 7), fill=icon_color, width=2)
+        cx = (rect[0] + rect[2]) // 2
+        y = rect[3] - 11
+        draw.line((cx - 6, y, cx + 6, y), fill=icon_color, width=2)
 
     def text_color(self, color):
         return tuple(color[:3])

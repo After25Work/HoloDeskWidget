@@ -542,7 +542,7 @@ class GridMixin:
         # only run once per keystroke.
         btn = self.top_button_rects()
         actions = self.top_button_actions()
-        visual_order = ("filter", "productions", "mode", "font", "color", "lang", "pin", "tray", "fullscreen", "close")
+        visual_order = ("filter", "productions", "mode", "color", "lang", "font", "pin", "tray", "fullscreen", "close")
         items = [{"kind": "button", "rect": btn[key], "activate": actions[key]}
                 for key in visual_order if key in btn]
         for tab in self.production_tabs():
