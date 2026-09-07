@@ -1,4 +1,5 @@
 import ctypes
+import threading
 import time
 import tkinter as tk
 from typing import Optional, Tuple
@@ -257,6 +258,12 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
                 "channel_urls": {},
                 "live_urls": {},
                 "live_titles": {},
+                # Guards every write into the four dict fields above from
+                # check_one()'s background threads against _merge_all_slots()
+                # reading/merging them on the Tk main thread -- without this,
+                # a worker inserting/removing a key mid-.update() can raise
+                # "RuntimeError: dictionary changed size during iteration".
+                "lock": threading.Lock(),
             }
             self.production_data[prod_id] = slot
         return slot
@@ -285,7 +292,9 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # of a stale snapshot from whenever the "All" tab was last entered.
         merged = {}
         for production in self._visible_productions():
-            merged.update(self._production_slot(production["id"])[key])
+            slot = self._production_slot(production["id"])
+            with slot["lock"]:
+                merged.update(slot[key])
         return merged
 
     def _all_targets(self):
@@ -444,9 +453,14 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
     def exit_fullscreen(self):
         if not self.is_fullscreen or self._pre_fullscreen is None:
             return
-        self.width, self.height, x, y = self._pre_fullscreen
+        self.width, _, x, y = self._pre_fullscreen
         self.is_fullscreen = False
         self._pre_fullscreen = None
+        # Recompute for live_only's CURRENT state rather than restoring the
+        # saved pre-fullscreen height verbatim -- live_only may have been
+        # toggled while fullscreen (fit_height() is a no-op then, see
+        # below), so the saved height can be stale for what's on screen now.
+        self.height = self._fit_height_value()
         self.root.geometry(f"{self.width}x{self.height}+{x}+{y}")
 
     def toggle_lang(self):
@@ -462,23 +476,33 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.render()
 
     def toggle_live_only(self):
-        if not self.live_only:
+        if not self.live_only and not self.is_fullscreen:
             # Remember the "all talents" height so switching the filter back
-            # off restores it, instead of forcing a recomputed size every time.
+            # off restores it, instead of forcing a recomputed size every
+            # time. Skipped while fullscreen: self.height is the
+            # screen-filling size then, not a meaningful "all talents"
+            # height to remember (see fit_height()'s fullscreen no-op below).
             self._all_height = self.height
         self.live_only = not self.live_only
         self.fit_height()
         self.render()
 
-    def fit_height(self):
+    def _fit_height_value(self):
         if self.live_only:
             _, natural_end = self.build_grid_layout(25, 18)
             target_height = natural_end + 90
         else:
             target_height = self._all_height
-        target_height = max(MIN_HEIGHT, min(MAX_HEIGHT, round(target_height)))
+        return max(MIN_HEIGHT, min(MAX_HEIGHT, round(target_height)))
+
+    def fit_height(self):
+        if self.is_fullscreen:
+            # Fullscreen always fills the screen regardless of live_only --
+            # the live_only-appropriate height is applied instead when
+            # exit_fullscreen() restores the pre-fullscreen geometry.
+            return
+        self.height = self._fit_height_value()
         x, y = self.root.winfo_x(), self.root.winfo_y()
-        self.height = target_height
         self.root.geometry(f"{self.width}x{self.height}+{x}+{y}")
 
     def current_settings(self):

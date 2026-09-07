@@ -29,13 +29,18 @@ def record_event(production_id, name, event, title=None, url=None):
     multiple talents can transition in the same refresh cycle.
     """
     global _writes_since_trim
-    entry = {"ts": time.time(), "production_id": production_id, "name": name, "event": event}
-    if title:
-        entry["title"] = title
-    if url:
-        entry["url"] = url
-    line = json.dumps(entry, ensure_ascii=False)
     with _lock:
+        # ts is captured under the lock so file order (what load_events()'s
+        # newest-first display goes by) always matches timestamp order --
+        # captured before acquiring, two threads could race to the lock in
+        # the opposite order from the one their timestamps were taken in,
+        # writing a chronologically-inverted pair of lines.
+        entry = {"ts": time.time(), "production_id": production_id, "name": name, "event": event}
+        if title:
+            entry["title"] = title
+        if url:
+            entry["url"] = url
+        line = json.dumps(entry, ensure_ascii=False)
         try:
             with STREAM_LOG_PATH.open("a", encoding="utf-8") as handle:
                 handle.write(line + "\n")

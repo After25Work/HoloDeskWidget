@@ -91,8 +91,13 @@ class InteractionMixin:
             # grip drag where the origin never changes.
             new_x = start_x + (start_w - self.width) if "w" in edge else start_x
             new_y = start_y + (start_h - self.height) if "n" in edge else start_y
-            if (new_x, new_y) != (start_x, start_y):
-                self.pending_position = (new_x, new_y)
+            # Always set (not just when it differs from start_x/start_y):
+            # request_render() coalesces bursts of drag_move() calls into one
+            # render, so an unconditional assignment here is what keeps
+            # _render_now() from applying a stale offset left over from an
+            # earlier call in the same burst whose new_x/new_y happened not
+            # to match this one's.
+            self.pending_position = (new_x, new_y)
             self.geometry_pending = True
             self.request_render()
             return

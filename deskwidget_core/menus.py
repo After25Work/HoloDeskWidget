@@ -20,6 +20,16 @@ class MenuMixin:
         by = self.root.winfo_y() + int(rect[3]) + 6
         win.geometry(f"+{bx}+{by}")
 
+    def _menu_colors(self, colors):
+        # Shared by show_context_menu()'s top-level menu and every submenu
+        # it builds (lang/productions/font), so a future theme-color tweak
+        # only has one place to change instead of drifting across each copy.
+        return dict(
+            bg=self._hex(self.tint(colors["neutral_btn"])), fg=self._hex(colors["text"]),
+            activebackground=self._hex(self.accent_color()),
+            activeforeground=self._hex((24, 24, 31)),
+        )
+
     def _close_popup(self, attr_name, after_close=None):
         win = getattr(self, attr_name)
         if win is not None:
@@ -315,9 +325,7 @@ class MenuMixin:
         colors = self.theme_colors()
         menu = tk.Menu(
             self.root, tearoff=0,
-            bg=self._hex(self.tint(colors["neutral_btn"])), fg=self._hex(colors["text"]),
-            activebackground=self._hex(self.accent_color()),
-            activeforeground=self._hex((24, 24, 31)),
+            **self._menu_colors(colors),
             disabledforeground=self._hex(colors["muted"]),
             relief="flat", borderwidth=1,
         )
@@ -344,12 +352,7 @@ class MenuMixin:
         menu.add_command(label=self.t("dark_mode") if self.dark_mode else self.t("light_mode"),
                          command=self.toggle_mode)
         menu.add_separator()
-        lang_menu = tk.Menu(
-            menu, tearoff=0,
-            bg=self._hex(self.tint(colors["neutral_btn"])), fg=self._hex(colors["text"]),
-            activebackground=self._hex(self.accent_color()),
-            activeforeground=self._hex((24, 24, 31)),
-        )
+        lang_menu = tk.Menu(menu, tearoff=0, **self._menu_colors(colors))
         # Plain commands with a "✓ " prefix on the active language, not
         # radiobuttons — same invisible-indicator issue as pin/live_only above.
         ja_label = f"✓ {self.t('lang_ja')}" if self.lang == "ja" else self.t("lang_ja")
@@ -363,12 +366,7 @@ class MenuMixin:
         # exist for it rather than showing one permanently-checked,
         # can't-be-unchecked entry.
         if self.has_multiple_productions():
-            productions_menu = tk.Menu(
-                menu, tearoff=0,
-                bg=self._hex(self.tint(colors["neutral_btn"])), fg=self._hex(colors["text"]),
-                activebackground=self._hex(self.accent_color()),
-                activeforeground=self._hex((24, 24, 31)),
-            )
+            productions_menu = tk.Menu(menu, tearoff=0, **self._menu_colors(colors))
             # Same enable/disable-all shortcut as open_productions_menu()'s
             # checklist popup, plus a "✓ " plain-command convention as
             # pin/live_only/lang above, one entry per production (mirrors that
@@ -387,12 +385,7 @@ class MenuMixin:
                                              command=lambda pid=prod_id: self.toggle_production(pid))
             menu.add_cascade(label=self.t("productions_button"), menu=productions_menu)
         menu.add_command(label=self.t("theme_color"), command=self.open_palette)
-        font_menu = tk.Menu(
-            menu, tearoff=0,
-            bg=self._hex(self.tint(colors["neutral_btn"])), fg=self._hex(colors["text"]),
-            activebackground=self._hex(self.accent_color()),
-            activeforeground=self._hex((24, 24, 31)),
-        )
+        font_menu = tk.Menu(menu, tearoff=0, **self._menu_colors(colors))
         # Same "✓ " plain-command convention as pin/live_only/lang/productions
         # above, one entry per Japanese-capable installed font (mirrors
         # open_font_menu()'s list) so the switch is reachable without the top

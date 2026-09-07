@@ -22,14 +22,24 @@ _FALLBACK_PRODUCTION = {
 
 def load_productions():
     data = load_json(PRODUCTIONS_INDEX, [])
-    productions = [
-        entry for entry in (data if isinstance(data, list) else [])
-        if isinstance(entry, dict) and entry.get("id") and entry.get("file")
+    productions = []
+    seen_ids = set()
+    for entry in (data if isinstance(data, list) else []):
+        if not isinstance(entry, dict) or not entry.get("id") or not entry.get("file"):
+            continue
         # A real production using the "All" tab's pseudo-id would silently
         # collide with ALL_PRODUCTION_ID in every ALL_PRODUCTION_ID branch
         # across widget.py/menus.py/refresh.py.
-        and entry["id"] != ALL_PRODUCTION_ID
-    ]
+        if entry["id"] == ALL_PRODUCTION_ID:
+            continue
+        # index.json is user-editable -- a hand-added duplicate id would
+        # otherwise double every refresh/log entry for it (widget.py's
+        # id-keyed lookups collapse to one, but self.productions itself
+        # stayed a list of two), so only the first entry for a given id wins.
+        if entry["id"] in seen_ids:
+            continue
+        seen_ids.add(entry["id"])
+        productions.append(entry)
     return productions or [_FALLBACK_PRODUCTION]
 
 

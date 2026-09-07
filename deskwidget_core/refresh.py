@@ -143,6 +143,10 @@ class RefreshMixin:
         targets, states, channel_urls, live_urls, live_titles = (
             slot["targets"], slot["states"], slot["channel_urls"],
             slot["live_urls"], slot["live_titles"])
+        # Guards every write below into the dicts above against
+        # _merge_all_slots() reading/merging them on the Tk main thread at
+        # the same time (see the note by "lock" in _production_slot()).
+        lock = slot["lock"]
         # Snapshotted once up front: check_one() only ever lands on one of the
         # states[name] = ... assignments below per call, so this alone is
         # enough to tell a real start/end transition (see
@@ -154,11 +158,14 @@ class RefreshMixin:
                         if target_name == name)
             if auto_resolve == "hololivepro" and name not in channel_urls:
                 try:
-                    channel_urls[name] = youtube.resolve_channel_url(slug)
+                    resolved = youtube.resolve_channel_url(slug)
                 except (HTTPError, OSError, UnicodeError, ValueError):
-                    channel_urls[name] = target
+                    resolved = target
+                with lock:
+                    channel_urls[name] = resolved
             elif name not in channel_urls:
-                channel_urls[name] = target
+                with lock:
+                    channel_urls[name] = target
             target = channel_urls[name]
             try:
                 video_id, title = youtube.fetch_live_info(target)
@@ -184,7 +191,8 @@ class RefreshMixin:
                     # state instead of escalating to "error" and re-logging the
                     # same failure on every refresh forever.
                     return
-                channel_urls[name] = target
+                with lock:
+                    channel_urls[name] = target
                 for index, (target_name, slug, _, unit) in enumerate(targets):
                     if target_name == name:
                         targets[index] = (target_name, slug, target, unit)
@@ -210,33 +218,36 @@ class RefreshMixin:
                 # Set live_urls before states: open_target() reads states
                 # first, so this ordering keeps it from ever observing
                 # state == "live" with live_urls not yet populated.
-                live_urls[name] = f"https://www.youtube.com/watch?v={video_id}"
-                if title:
-                    # Strip VARIATION SELECTOR-15 (text-presentation): some
-                    # titles pair it with a dingbat/symbol (e.g. "✧︎")
-                    # to force plain-text rendering, but Yu Gothic has no glyph
-                    # for the selector itself and renders it as a tofu box.
-                    # ️ (emoji-presentation) is left alone since that half
-                    # of the run already renders fine via the Segoe UI Emoji
-                    # fallback in _emoji_runs(). _UNSUPPORTED_DECORATION_RE
-                    # strips other known no-glyph decoration the same way.
-                    live_titles[name] = _UNSUPPORTED_DECORATION_RE.sub(
-                        "", title.replace("︎", ""))
-                else:
-                    live_titles.pop(name, None)
-                states[name] = "live"
+                with lock:
+                    live_urls[name] = f"https://www.youtube.com/watch?v={video_id}"
+                    if title:
+                        # Strip VARIATION SELECTOR-15 (text-presentation): some
+                        # titles pair it with a dingbat/symbol (e.g. "✧︎")
+                        # to force plain-text rendering, but Yu Gothic has no glyph
+                        # for the selector itself and renders it as a tofu box.
+                        # ️ (emoji-presentation) is left alone since that half
+                        # of the run already renders fine via the Segoe UI Emoji
+                        # fallback in _emoji_runs(). _UNSUPPORTED_DECORATION_RE
+                        # strips other known no-glyph decoration the same way.
+                        live_titles[name] = _UNSUPPORTED_DECORATION_RE.sub(
+                            "", title.replace("︎", ""))
+                    else:
+                        live_titles.pop(name, None)
+                    states[name] = "live"
                 self._log_state_transition(prod_id, name, previous_state, "live",
                                             live_titles.get(name), live_urls.get(name))
             else:
-                live_urls.pop(name, None)
-                live_titles.pop(name, None)
-                states[name] = "offline"
+                with lock:
+                    live_urls.pop(name, None)
+                    live_titles.pop(name, None)
+                    states[name] = "offline"
                 self._log_state_transition(prod_id, name, previous_state, "offline")
         except (HTTPError, OSError, UnicodeError, ValueError,
                 youtube.ChannelNotFoundError) as error:
-            states[name] = "error"
-            live_urls.pop(name, None)
-            live_titles.pop(name, None)
+            with lock:
+                states[name] = "error"
+                live_urls.pop(name, None)
+                live_titles.pop(name, None)
             log_error(name, error)
             self._log_state_transition(prod_id, name, previous_state, "error")
 

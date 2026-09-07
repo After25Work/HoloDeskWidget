@@ -1,9 +1,8 @@
 import calendar
 import datetime
-import json
 import time
 
-from .paths import ROOT
+from .paths import ROOT, load_json
 
 # Official EN display names that don't follow the plain "slug -> Title Case"
 # pattern (stylized capitalization, apostrophes, or a slug that abbreviates
@@ -111,9 +110,8 @@ def _load_dst_rule(zone):
 
 
 def _load_clock_zones():
-    try:
-        data = json.loads((ROOT / "clock_zones.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    data = load_json(ROOT / "clock_zones.json", None)
+    if data is None:
         return _DEFAULT_CLOCK_ZONES
     zones = [
         (zone["label"], zone["offset_hours"], zone["date_order"], _load_dst_rule(zone),

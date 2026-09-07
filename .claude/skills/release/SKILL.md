@@ -71,8 +71,8 @@ targeted string replacement and asserts each match is unique before writing.
    (PyInstaller, using `build/HoloDesk Widget.spec` or `build/VTDeskWidget.spec`)
    to produce `dist/HoloDesk Widget.exe` or `dist/VTDeskWidget.exe`, then
    stages the exe + that variant's `productions/` directory (+
-   `clock_zones.json` for VT only -- Holo has never shipped that file,
-   relying on the in-code fallback table instead) + both
+   `clock_zones.json`, if that variant has one -- otherwise the app falls
+   back to its in-code default zone table) + both
    `variants/<variant>/docs/Readme*.html` into
    `release/<AppName>-v<version>/`, zips it to
    `release/<AppName>-v<version>.zip`, and deletes the staging folder. It
@@ -86,9 +86,10 @@ targeted string replacement and asserts each match is unique before writing.
    unzip -l "release/HoloDeskWidget-v<version>.zip"
    ```
    Holo expects: `HoloDesk Widget.exe`, `productions/index.json`,
-   `productions/hololive.json`, `Readme.html`, `Readme.en.html`.
+   `productions/hololive.json`, `clock_zones.json`, `Readme.html`,
+   `Readme.en.html`.
    VT expects the same shape plus its other ten `productions/*.json` files
-   and `clock_zones.json`.
+   and its own `clock_zones.json`.
 
 5. **Hand off the artifact.** If a file-delivery tool is available (e.g.
    `SendUserFile`), send the zip so the user doesn't have to dig through

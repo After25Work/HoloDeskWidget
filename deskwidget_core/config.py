@@ -61,6 +61,13 @@ def _coerce(value, default, cast):
         return default
 
 
+def _coerce_bool(value, default):
+    # isinstance, not _coerce(value, default, bool): bool() coerces any
+    # truthy non-bool (e.g. a hand-edited string "false") to True instead of
+    # falling back to the default like every other coerced field here does.
+    return value if isinstance(value, bool) else default
+
+
 def load_settings():
     # Kept in its own file (not alongside productions/) so user preferences
     # survive a talent-list refresh/replace, and vice versa. Falls back to
@@ -82,11 +89,7 @@ def load_settings():
     settings["background_alpha"] = max(0.0, min(1.0 - MIN_BACKGROUND_DARKNESS,
         _coerce(settings["background_alpha"], DEFAULT_SETTINGS["background_alpha"], float)))
     settings["lang"] = settings["lang"] if settings["lang"] in STRINGS else "ja"
-    # isinstance, not bool(...): bool() coerces any truthy non-bool (e.g. a
-    # hand-edited string "false") to True instead of falling back to the
-    # default like every other coerced field here does.
-    settings["topmost"] = (settings["topmost"] if isinstance(settings["topmost"], bool)
-                            else DEFAULT_SETTINGS["topmost"])
+    settings["topmost"] = _coerce_bool(settings["topmost"], DEFAULT_SETTINGS["topmost"])
     settings["theme_index"] = max(0, min(len(THEME_PALETTE) - 1,
         _coerce(settings["theme_index"], DEFAULT_SETTINGS["theme_index"], int)))
     # Not checked against list_installed_fonts() here: that's a full
@@ -99,10 +102,8 @@ def load_settings():
     # until a real family is picked -- not worth paying the scan's cost on
     # every launch to avoid.
     settings["font_family"] = _coerce(settings["font_family"], DEFAULT_SETTINGS["font_family"], str)
-    settings["dark_mode"] = (settings["dark_mode"] if isinstance(settings["dark_mode"], bool)
-                              else DEFAULT_SETTINGS["dark_mode"])
-    settings["live_only"] = (settings["live_only"] if isinstance(settings["live_only"], bool)
-                              else DEFAULT_SETTINGS["live_only"])
+    settings["dark_mode"] = _coerce_bool(settings["dark_mode"], DEFAULT_SETTINGS["dark_mode"])
+    settings["live_only"] = _coerce_bool(settings["live_only"], DEFAULT_SETTINGS["live_only"])
     settings["text_scale"] = max(TEXT_SCALE_MIN, min(TEXT_SCALE_MAX,
         _coerce(settings["text_scale"], DEFAULT_SETTINGS["text_scale"], float)))
     settings["active_production"] = _coerce(

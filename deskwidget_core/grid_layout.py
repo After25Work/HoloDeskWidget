@@ -215,7 +215,7 @@ class GridMixin:
 
     def build_grid_layout(self, row_height, divider_height, num_cols=None,
                            clock_row_height=None, clock_divider_height=None,
-                           targets=None, states=None):
+                           clock_layout=None, targets=None, states=None):
         # Shared by render() (drawing) and click() (hit-testing) so the two never
         # drift apart. Column count grows with the window so widening reflows more
         # columns in rather than just stretching 3. Talents are grouped by unit
@@ -282,8 +282,15 @@ class GridMixin:
         layout_items.append({"type": "divider", "y": y, "unit": self.t("clock_category"),
                               "h": clock_divider_height})
         y += clock_divider_height
-        clock_entries, clock_texts, clock_cols, col_widths, clock_col_gap = \
-            self._clock_layout(available, natural_cols)
+        # clock_layout lets a caller that already computed this (compute_grid(),
+        # across every candidate column count it tries plus its final build)
+        # pass the same tuple straight through instead of recomputing it --
+        # available/natural_cols above never vary with num_cols, so every one
+        # of those calls would otherwise redo the exact same _clock_layout()
+        # search and measurement work for an identical result.
+        clock_entries, clock_texts, clock_cols, col_widths, clock_col_gap = (
+            clock_layout if clock_layout is not None
+            else self._clock_layout(available, natural_cols))
         natural_total = sum(col_widths) + clock_col_gap * (clock_cols - 1)
         if natural_total > available:
             # Still too wide even at 1 column (an unusually narrow window, or
@@ -394,7 +401,14 @@ class GridMixin:
         # footprint carved out for it below, so the talent grid's own
         # available_height came out too generous and its last rows could
         # run past the bottom of the window.
-        clock_entries, _, clock_cols, _, _ = self._clock_layout(available_width, natural_cols)
+        # Computed once and passed straight through to every build_grid_layout()
+        # call below (each candidate column count in measure()'s search, plus
+        # the final build past the loop) instead of letting each one redo this
+        # same search -- available_width/natural_cols never vary with the
+        # talent grid's candidate column count, so every one of those calls
+        # would otherwise recompute an identical result.
+        clock_layout = self._clock_layout(available_width, natural_cols)
+        clock_entries, _, clock_cols, _, _ = clock_layout
         clock_rows = -(-len(clock_entries) // clock_cols)
         clock_height = clock_divider_height + clock_rows * clock_row_height
         clock_base_height = 18 + clock_rows * 25
@@ -486,6 +500,7 @@ class GridMixin:
             # columns means more rows).
             scale_cap = label_fit_scale(available_width / cols)
             _, natural_end = self.build_grid_layout(25, 18, num_cols=cols,
+                                                      clock_layout=clock_layout,
                                                       targets=targets, states=states)
             content_height = max(1, natural_end - grid_top - clock_base_height)
             raw_scale = available_height / content_height
@@ -517,6 +532,7 @@ class GridMixin:
         layout_items, grid_end = self.build_grid_layout(row_height, divider_height, num_cols=num_cols,
                                                          clock_row_height=clock_row_height,
                                                          clock_divider_height=clock_divider_height,
+                                                         clock_layout=clock_layout,
                                                          targets=targets, states=states)
         return layout_items, row_height, divider_height, scale
 

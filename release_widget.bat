@@ -8,14 +8,9 @@ set "VARIANT=%~1"
 if "%VARIANT%"=="holo" (
     set "APP_NAME=HoloDeskWidget"
     set "EXE_NAME=HoloDesk Widget.exe"
-    set "SHIP_CLOCK_ZONES=0"
 ) else if "%VARIANT%"=="vt" (
     set "APP_NAME=VTDeskWidget"
     set "EXE_NAME=VTDeskWidget.exe"
-    rem Unlike Holo, VT ships clock_zones.json in its release zip (Holo has
-    rem never done so and keeps relying on the in-code fallback table --
-    rem see deskwidget_core/strings.py's _DEFAULT_CLOCK_ZONES).
-    set "SHIP_CLOCK_ZONES=1"
 ) else (
     echo [ERROR] Usage: release_widget.bat holo^|vt
     pause
@@ -113,7 +108,11 @@ rem settings.json/logs are per-machine runtime state, not release content.
 copy /y "%EXE%" "%STAGE%\" >nul
 mkdir "%STAGE%\productions"
 xcopy /y /i /e /q "%PRODUCTIONS_DIR%" "%STAGE%\productions" >nul
-if "%SHIP_CLOCK_ZONES%"=="1" (
+rem Ship this variant's clock_zones.json whenever it has one -- feature-detected
+rem rather than hardcoded per variant, so a variant that adds/removes the file
+rem doesn't also need a matching edit here (see deskwidget_core/strings.py's
+rem _DEFAULT_CLOCK_ZONES for the in-code fallback used when it's absent).
+if exist "%VARIANT_DIR%\clock_zones.json" (
     copy /y "%VARIANT_DIR%\clock_zones.json" "%STAGE%\" >nul
 )
 copy /y "%USAGE_HTML%" "%STAGE%\Readme.html" >nul
