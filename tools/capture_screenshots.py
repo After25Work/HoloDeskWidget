@@ -11,12 +11,15 @@ into docs/screenshots/:
     live_ticker.gif                    - the live-only view's scrolling
                                           now-playing ticker, animated
 
-While capturing, the desktop wallpaper is temporarily swapped for a static
-solid color and restored afterwards (see frozen_desktop below). The widget's
-rounded corners are cut out with real per-pixel color-key transparency (not
-alpha), so whatever is on the real desktop shows through those corners; a
-moving/live wallpaper would otherwise bleed into the shots and, worse, flicker
-across the dozens of frames grabbed back to back for the ticker GIF.
+While capturing, the whole screen is covered with a flat-color topmost window
+pinned just below the widget (see opaque_backdrop below) and removed
+afterwards. The widget's rounded corners -- and the ~20px margin around the
+whole panel, see rendering.py's render() -- are cut out with real per-pixel
+color-key transparency (not alpha), so whatever is on the real screen shows
+through there; without the backdrop that would be the live desktop (icons,
+taskbar, any other window sitting behind it), bleeding into every shot and,
+worse, flickering across the dozens of frames grabbed back to back for the
+ticker GIF.
 
 Windows only (uses ctypes user32 calls the same way deskwidget_core/widget.py
 and deskwidget_core/single_instance.py already do -- no extra dependency
@@ -33,21 +36,19 @@ import ctypes
 import os
 import subprocess
 import sys
-import tempfile
 import time
 import tkinter as tk
-import winreg
 from ctypes import wintypes
 from pathlib import Path
 
-from PIL import Image, ImageGrab
+from PIL import ImageGrab
 
 # Must happen before any window/screen coordinates are touched below. Without
 # this, this process stays in Windows' legacy DPI-virtualized mode, where
 # GetWindowRect() and ImageGrab.grab() disagree on what a pixel is on any
 # display scaled above 100% -- the resulting bbox drifts from the widget's
 # real on-screen footprint, so captures bleed in whatever sits just outside
-# it (taskbar, other windows) instead of the frozen desktop color.
+# it (taskbar, other windows) instead of the backdrop color.
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
 except (AttributeError, OSError):
@@ -89,11 +90,11 @@ user32.SetCursorPos.argtypes = [ctypes.c_int, ctypes.c_int]
 user32.mouse_event.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
                                 wintypes.DWORD, ctypes.c_void_p]
 user32.keybd_event.argtypes = [ctypes.c_ubyte, ctypes.c_ubyte, wintypes.DWORD, ctypes.c_void_p]
-user32.SystemParametersInfoW.argtypes = [wintypes.UINT, wintypes.UINT, wintypes.LPCWSTR, wintypes.UINT]
-user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
-user32.FindWindowW.restype = ctypes.c_void_p
-user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM]
-user32.SendMessageW.restype = ctypes.c_ssize_t
+user32.GetSystemMetrics.argtypes = [ctypes.c_int]
+user32.GetSystemMetrics.restype = ctypes.c_int
+user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
+                                 ctypes.c_int, ctypes.c_int, wintypes.UINT]
+user32.SetWindowPos.restype = wintypes.BOOL
 
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
@@ -101,20 +102,24 @@ MOUSEEVENTF_RIGHTDOWN = 0x0008
 MOUSEEVENTF_RIGHTUP = 0x0010
 VK_ESCAPE = 0x1B
 KEYEVENTF_KEYUP = 0x0002
-SPI_GETDESKWALLPAPER = 0x0073
-SPI_SETDESKWALLPAPER = 0x0014
-SPIF_UPDATEINIFILE = 0x01
-SPIF_SENDCHANGE = 0x02
+# Bounding box of the whole multi-monitor desktop, not just the primary
+# display -- what opaque_backdrop below covers.
+SM_XVIRTUALSCREEN = 76
+SM_YVIRTUALSCREEN = 77
+SM_CXVIRTUALSCREEN = 78
+SM_CYVIRTUALSCREEN = 79
+# For re-asserting the widget's z-order above opaque_backdrop below.
+# SetWindowPos(HWND_TOPMOST) isn't subject to the foreground-lock
+# restrictions SetForegroundWindow is, so it reliably reorders z even
+# across processes without needing (or granting) input focus.
+HWND_TOPMOST = -1
+SWP_NOMOVE = 0x0002
+SWP_NOSIZE = 0x0001
+SWP_NOACTIVATE = 0x0010
 # Native Win32 popup-menu window class -- Tk's tk_popup() on Windows opens a
 # real system menu of this class, so it can be located and cropped precisely
 # instead of guessing how far the context-menu screenshot needs to extend.
 MENU_WINDOW_CLASS = "#32768"
-# WM_COMMAND id Explorer's Desktop context menu sends for "Show desktop
-# icons" -- posting it to Progman toggles that checkbox exactly like
-# right-clicking the desktop and choosing it does, since there's no direct
-# GetDesktopIconsVisible()-style Win32 call.
-WM_COMMAND = 0x0111
-PROGMAN_TOGGLE_ICONS = 0x7402
 
 
 def get_window_rect(hwnd):
@@ -155,96 +160,71 @@ def click_top_button(hwnd, key, settle=0.3):
     time.sleep(settle)
 
 
-# --- Desktop wallpaper freeze/restore ---------------------------------
+# --- Screen backdrop ---------------------------------------------------
 
-class frozen_desktop:
-    """Temporarily swaps the desktop wallpaper for a static solid color.
+class opaque_backdrop:
+    """Covers the whole (possibly multi-monitor) screen with a flat-color,
+    topmost, borderless window for the duration of the capture, then
+    destroys it.
 
-    The widget cuts its rounded corners out with real color-key
-    transparency, so the real desktop shows through there. A live/animated
-    wallpaper would bleed into every shot and flicker across the
-    GIF_FRAME_COUNT frames grabbed back to back for the ticker GIF, so this
-    pins the desktop to one flat color for the duration of the capture and
-    always restores whatever was there before, even if capture fails
-    partway through.
+    The widget cuts its rounded corners -- and the ~20px margin around the
+    whole panel, see rendering.py's render() -- out with real per-pixel
+    color-key transparency, so whatever is on the real screen shows through
+    there. An earlier version of this script tried to handle that by
+    swapping the desktop wallpaper for a solid color and toggling "Show
+    desktop icons" via a WM_COMMAND sent to Progman, but that toggle turned
+    out to be a silent no-op on current Windows builds (SendMessageW returns
+    without changing anything), and neither trick hides a real window that
+    happens to be sitting behind the widget (e.g. an always-on-top overlay
+    from some other app). A real covering window sidesteps both problems: it
+    hides everything underneath regardless of what it is, and this class
+    always destroys it on exit, even if capture fails partway through, so
+    the user's desktop is never left covered.
     """
 
-    COLOR = (18, 18, 24)
+    COLOR = "#121218"
+
+    def __init__(self, hwnd):
+        self.hwnd = hwnd
+        self.root = None
 
     def __enter__(self):
-        self.previous = None
-        self.temp_path = None
         try:
-            buf = ctypes.create_unicode_buffer(260)
-            user32.SystemParametersInfoW(SPI_GETDESKWALLPAPER, 260, buf, 0)
-            self.previous = buf.value
-            fd, path = tempfile.mkstemp(suffix=".bmp", prefix="holodesk_capture_bg_")
-            os.close(fd)
-            Image.new("RGB", (256, 256), self.COLOR).save(path, "BMP")
-            user32.SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, path,
-                                          SPIF_UPDATEINIFILE | SPIF_SENDCHANGE)
-            self.temp_path = path
-            time.sleep(0.3)
-        except OSError as error:
-            print(f"warning: could not freeze the desktop background ({error}); "
-                  f"capturing over whatever wallpaper is currently active")
-            self.previous = None
+            x = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+            y = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+            width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+            self.root = tk.Tk()
+            self.root.overrideredirect(True)
+            self.root.attributes("-topmost", True)
+            self.root.configure(bg=self.COLOR)
+            self.root.geometry(f"{width}x{height}+{x}+{y}")
+            self.root.update()
+        except tk.TclError as error:
+            print(f"warning: could not create the capture backdrop ({error}); "
+                  f"capturing over whatever is currently on screen")
+            self.root = None
+        # Creating the backdrop just made it the newest topmost window, which
+        # HWND_TOPMOST places at the very top of the topmost band -- above
+        # the widget. bring_to_front's SetForegroundWindow can't reliably
+        # undo that here (Windows can silently refuse a background process
+        # foregrounding a *different* process's window), so reclaim the top
+        # with a direct z-order call instead, which carries no such
+        # restriction.
+        user32.SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+        # DWM needs a moment to actually composite the new window before a
+        # screen grab reflects it -- without this, the very first capture can
+        # win the race and still show whatever was on screen a frame earlier.
+        time.sleep(0.3)
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        if self.previous is not None:
-            user32.SystemParametersInfoW(SPI_SETDESKWALLPAPER, 0, self.previous,
-                                          SPIF_UPDATEINIFILE | SPIF_SENDCHANGE)
-        if self.temp_path:
+        if self.root is not None:
             try:
-                os.remove(self.temp_path)
-            except OSError:
+                self.root.destroy()
+            except tk.TclError:
                 pass
-        return False
-
-
-def _desktop_icons_hidden():
-    try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
-        ) as key:
-            value, _ = winreg.QueryValueEx(key, "HideIcons")
-            return bool(value)
-    except OSError:
-        return False  # key/value absent -- icons are shown, Explorer's own default
-
-
-def _toggle_desktop_icons():
-    progman = user32.FindWindowW("Progman", None)
-    if progman:
-        user32.SendMessageW(progman, WM_COMMAND, PROGMAN_TOGGLE_ICONS, 0)
-
-
-class hidden_desktop_icons:
-    """Desktop icons (This PC, Recycle Bin, ...) live in Windows' default
-    top-left icon grid -- right where the widget's own default position
-    (x=40, y=40, see deskwidget_core/config.py's DEFAULT_SETTINGS) puts it.
-    frozen_desktop only swaps the wallpaper *image*; icons are a separate
-    layer Explorer always draws on top of it, so without this they show
-    straight through the widget's transparent rounded corners in every shot.
-    Toggles the same "Show desktop icons" state the Desktop right-click menu
-    does, and only restores it on exit if entering here actually changed
-    anything -- a no-op if icons were already hidden coming in, so this
-    never leaves the user's desktop in a different state than it found it.
-    """
-
-    def __enter__(self):
-        self.toggled = False
-        if not _desktop_icons_hidden():
-            _toggle_desktop_icons()
-            self.toggled = True
-            time.sleep(0.3)
-        return self
-
-    def __exit__(self, exc_type, exc, tb):
-        if self.toggled:
-            _toggle_desktop_icons()
         return False
 
 
@@ -377,7 +357,7 @@ def main():
     time.sleep(INITIAL_SETTLE_SECONDS)
 
     lang_toggled = False
-    with capture_warning_banner(), hidden_desktop_icons(), frozen_desktop():
+    with capture_warning_banner(), opaque_backdrop(hwnd):
         print("Capturing Japanese (default) screenshots...")
         rect, img = capture_main(hwnd, "")
         capture_buttons(rect[2] - rect[0], img, "")

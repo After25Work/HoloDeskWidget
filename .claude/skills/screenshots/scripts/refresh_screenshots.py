@@ -16,8 +16,8 @@ docs/Readme*.html actually documents. This wrapper:
   5. restores the original settings.json untouched (or removes the file
      again if there wasn't one to begin with).
 
-Mirrors how capture_screenshots.py itself freezes/restores the desktop
-wallpaper around the shots -- same idea, applied to settings.json.
+Mirrors how capture_screenshots.py itself covers/uncovers the screen with a
+backdrop window around the shots -- same idea, applied to settings.json.
 
 Windows only, same as capture_screenshots.py. Only targets the Holo variant
 (the only one capture_screenshots.py currently knows how to drive).

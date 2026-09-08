@@ -1,6 +1,6 @@
 ---
 name: screenshots
-description: Refresh HoloDeskWidget's documentation screenshots/GIF (main.png, buttons.png, context_menu.png, live_ticker.gif, plus their _en counterparts) in variants/holo/docs/screenshots/, captured against the app's default settings.json state rather than whatever a developer's local window position/theme/language happens to be. Use whenever the user asks to update, refresh, retake, or regenerate the screenshots or the live ticker GIF, or "スクリーンショットを更新" / "スクショ撮り直し" and similar Japanese phrasing. Windows-only and Holo-variant-only (VT isn't wired up yet); moves the real mouse and briefly swaps the desktop wallpaper, so confirm with the user before running and ask them not to touch the mouse/keyboard while it's in progress.
+description: Refresh HoloDeskWidget's documentation screenshots/GIF (main.png, buttons.png, context_menu.png, live_ticker.gif, plus their _en counterparts) in variants/holo/docs/screenshots/, captured against the app's default settings.json state rather than whatever a developer's local window position/theme/language happens to be. Use whenever the user asks to update, refresh, retake, or regenerate the screenshots or the live ticker GIF, or "スクリーンショットを更新" / "スクショ撮り直し" and similar Japanese phrasing. Windows-only and Holo-variant-only (VT isn't wired up yet); moves the real mouse and briefly covers the screen with a flat-color window, so confirm with the user before running and ask them not to touch the mouse/keyboard while it's in progress.
 ---
 
 # HoloDeskWidget screenshot refresh
@@ -17,22 +17,27 @@ This skill runs that script wrapped so the capture always reflects
 `deskwidget_core.config.DEFAULT_SETTINGS`, then puts the developer's own
 `settings.json` back exactly as it was.
 
-`tools/capture_screenshots.py` picked up three fixes the first time this
-skill actually ran end to end:
+`tools/capture_screenshots.py` picked up a few fixes across the times this
+skill has actually run end to end:
 
 - **DPI awareness** (`SetProcessDpiAwareness`, called before any
   window/screen coordinate is touched) -- harmless and correct regardless,
   though it turned out not to be the real cause of the bleed below.
-- **Desktop icons hidden for the duration** (`hidden_desktop_icons`, toggled
-  the same way the Desktop right-click menu's "Show desktop icons" does).
-  This was the actual cause: the widget's default position is `x=40, y=40`
-  (see `DEFAULT_SETTINGS` in `deskwidget_core/config.py`) -- right on top of
-  Windows' default top-left desktop icon grid. `frozen_desktop` only ever
-  swapped the *wallpaper image*; icons are a separate layer Explorer always
-  draws on top of it, so they showed straight through the widget's
-  transparent rounded corners in every shot regardless of the wallpaper
-  fix. Only restores icon visibility on exit if it actually hid them (a
-  no-op if the user already had icons hidden).
+- **The whole screen covered by a flat-color topmost window** (`opaque_backdrop`)
+  for the duration of the capture, pinned just below the widget in z-order.
+  The widget cuts its rounded corners -- and a margin around the whole panel
+  -- out with real per-pixel color-key transparency, so whatever is on the
+  real screen normally shows through there. Two earlier approaches tried to
+  paper over that instead of covering it: swapping the desktop wallpaper for
+  a flat color (`frozen_desktop`, since removed), and toggling "Show desktop
+  icons" the same way the Desktop right-click menu does (`hidden_desktop_icons`,
+  since removed). Both turned out incomplete -- the icon toggle is a silent
+  no-op on current Windows builds (the `SendMessageW` call to Progman returns
+  without changing anything), and neither approach hides a real window
+  (another app's always-on-top overlay, etc.) that happens to be sitting
+  behind the widget. `opaque_backdrop` covers all of that at once by putting
+  an actual window there instead, and always destroys it on exit even if
+  capture fails partway through.
 - **A red always-on-top warning banner** pinned across the very top of the
   screen (y=0..32, safely above the widget's y=40 default top edge so it can
   never bleed into a grabbed region itself) reading "自動操作でスクリーンショット
@@ -44,10 +49,10 @@ skill actually ran end to end:
 ## Before running
 
 - **Confirm with the user first.** This takes over the real mouse cursor,
-  right-clicks and clicks buttons on the actual desktop, and briefly swaps
-  the wallpaper to a flat color (restored after). Tell them roughly what
-  will happen and ask them not to use the mouse/keyboard until it's done
-  (well under a minute).
+  right-clicks and clicks buttons on the actual desktop, and briefly covers
+  the whole screen with a flat-color window (removed after). Tell them
+  roughly what will happen and ask them not to use the mouse/keyboard until
+  it's done (well under a minute).
 - **Holo only.** `tools/capture_screenshots.py` is hardcoded to the Holo
   variant (`variants/holo/...`). If the user asks for VT screenshots, say
   that the capture script would need to be re-pointed at `variants/vt`
