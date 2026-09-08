@@ -18,8 +18,16 @@ VTuberタレントの配信状況を常時表示するWindowsデスクトップ�
 - `start_widget_holo.py` / `start_widget_vt.py` — 各アプリの起動エントリポイント。`start_widget_holo.bat` / `start_widget_vt.bat` は開発環境からの起動ランチャーです。
 - `build_widget.bat holo|vt` / `release_widget.bat holo|vt` — ビルド・リリースzip作成スクリプト(variant名を引数に取ります)。詳細は`.claude/skills/release/SKILL.md`を参照。
 - `tools/` — 開発者向けツール(現状Holo variant向けのスクリーンショット撮影スクリプトのみ)。
+- `tests/` — `deskwidget_core`のロジック部分(設定の読み書き・配信履歴・talents/production一覧・YouTube応答のパース・レイアウト計算・世界時計のDST計算・多言語文字列の整合性)に対するpytestユニットテスト。Tkinter描画やWin32連携部分(`widget.py`本体・`rendering.py`・`tray.py`等)はGUI依存のため対象外です。
 
 両アプリは独立にバージョン管理・リリースされます(`variants/holo/version.py` / `variants/vt/version.py`)。
+
+## テスト
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
 
 ## ライセンス
 
