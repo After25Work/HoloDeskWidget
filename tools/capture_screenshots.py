@@ -49,8 +49,24 @@ from PIL import ImageGrab
 # display scaled above 100% -- the resulting bbox drifts from the widget's
 # real on-screen footprint, so captures bleed in whatever sits just outside
 # it (taskbar, other windows) instead of the backdrop color.
+#
+# ctypes.windll (unlike oledll) never raises on a failed HRESULT, so a plain
+# `SetProcessDpiAwareness(2)` call that fails silently returns an error code
+# instead of raising -- e.g. E_ACCESSDENIED, which Windows returns whenever
+# an awareness mode was already set for this process (by an inherited
+# manifest, or by this exact call happening to run twice), whether or not
+# that mode already happens to be per-monitor. So check what's actually in
+# effect first with GetProcessDpiAwareness rather than reacting to the
+# HRESULT alone -- otherwise an already-correct per-monitor process would
+# hit the "failed" branch below and get needlessly downgraded to the
+# coarser SetProcessDPIAware() fallback.
+_PROCESS_PER_MONITOR_DPI_AWARE = 2
 try:
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+    _current_awareness = ctypes.c_int(-1)
+    ctypes.windll.shcore.GetProcessDpiAwareness(None, ctypes.byref(_current_awareness))
+    if _current_awareness.value != _PROCESS_PER_MONITOR_DPI_AWARE:
+        if ctypes.windll.shcore.SetProcessDpiAwareness(_PROCESS_PER_MONITOR_DPI_AWARE) != 0:  # not S_OK
+            ctypes.windll.user32.SetProcessDPIAware()
 except (AttributeError, OSError):
     ctypes.windll.user32.SetProcessDPIAware()
 
@@ -63,6 +79,7 @@ from variants.holo.profile import PROFILE  # noqa: E402
 appconfig.configure(PROFILE)
 
 from deskwidget_core import layout  # noqa: E402
+from deskwidget_core.config import DEFAULT_SETTINGS  # noqa: E402
 from deskwidget_core.paths import WINDOW_TITLE  # noqa: E402
 from deskwidget_core.single_instance import bring_to_front, find_window  # noqa: E402
 
@@ -95,6 +112,8 @@ user32.GetSystemMetrics.restype = ctypes.c_int
 user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
                                  ctypes.c_int, ctypes.c_int, wintypes.UINT]
 user32.SetWindowPos.restype = wintypes.BOOL
+user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.GetWindowLongW.restype = ctypes.c_long
 
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
@@ -102,20 +121,31 @@ MOUSEEVENTF_RIGHTDOWN = 0x0008
 MOUSEEVENTF_RIGHTUP = 0x0010
 VK_ESCAPE = 0x1B
 KEYEVENTF_KEYUP = 0x0002
+# Width of just the primary display -- what capture_warning_banner below
+# spans (unlike opaque_backdrop, which covers every monitor).
+SM_CXSCREEN = 0
 # Bounding box of the whole multi-monitor desktop, not just the primary
 # display -- what opaque_backdrop below covers.
 SM_XVIRTUALSCREEN = 76
 SM_YVIRTUALSCREEN = 77
 SM_CXVIRTUALSCREEN = 78
 SM_CYVIRTUALSCREEN = 79
-# For re-asserting the widget's z-order above opaque_backdrop below.
-# SetWindowPos(HWND_TOPMOST) isn't subject to the foreground-lock
-# restrictions SetForegroundWindow is, so it reliably reorders z even
-# across processes without needing (or granting) input focus.
+# For re-asserting the widget's z-order above opaque_backdrop below, and
+# restoring it afterwards. SetWindowPos(HWND_TOPMOST/HWND_NOTOPMOST) isn't
+# subject to the foreground-lock restrictions SetForegroundWindow is, so it
+# reliably reorders z even across processes without needing (or granting)
+# input focus.
 HWND_TOPMOST = -1
+HWND_NOTOPMOST = -2
 SWP_NOMOVE = 0x0002
 SWP_NOSIZE = 0x0001
 SWP_NOACTIVATE = 0x0010
+# For reading the widget's *current* WS_EX_TOPMOST bit before touching it, so
+# opaque_backdrop can restore whatever state it found rather than always
+# clearing topmost afterwards (which would un-pin a window the user, or
+# settings.json, had deliberately pinned before this script ran).
+GWL_EXSTYLE = -20
+WS_EX_TOPMOST = 0x00000008
 # Native Win32 popup-menu window class -- Tk's tk_popup() on Windows opens a
 # real system menu of this class, so it can be located and cropped precisely
 # instead of guessing how far the context-menu screenshot needs to extend.
@@ -162,6 +192,46 @@ def click_top_button(hwnd, key, settle=0.3):
 
 # --- Screen backdrop ---------------------------------------------------
 
+def _hex_to_rgb(hex_color):
+    return tuple(int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+
+
+def _create_overlay_window(width, height, x, y, bg):
+    """Create a topmost, borderless, flat-color Tk window covering the given
+    rect. Returns the Tk root, or None (after printing a warning) if Tk setup
+    fails at any point -- including partway through (e.g. geometry()/update()
+    raising after tk.Tk() itself already succeeded), in which case the
+    partially-built root is destroyed here before returning None, so a
+    caller that only ever destroys a non-None self.root can't inherit an
+    unreferenced, undestroyable window left on screen.
+    """
+    root = None
+    try:
+        root = tk.Tk()
+        root.overrideredirect(True)
+        root.attributes("-topmost", True)
+        root.configure(bg=bg)
+        root.geometry(f"{width}x{height}+{x}+{y}")
+        root.update()
+        return root
+    except tk.TclError as error:
+        print(f"warning: could not create a capture overlay window ({error})")
+        if root is not None:
+            try:
+                root.destroy()
+            except tk.TclError:
+                pass
+        return None
+
+
+def _destroy_quietly(root):
+    if root is not None:
+        try:
+            root.destroy()
+        except tk.TclError:
+            pass
+
+
 class opaque_backdrop:
     """Covers the whole (possibly multi-monitor) screen with a flat-color,
     topmost, borderless window for the duration of the capture, then
@@ -180,6 +250,10 @@ class opaque_backdrop:
     hides everything underneath regardless of what it is, and this class
     always destroys it on exit, even if capture fails partway through, so
     the user's desktop is never left covered.
+
+    Entered *before* capture_warning_banner in main() -- see the note there:
+    window-creation order alone gives the banner the correct final z-order
+    without needing a second re-assert pass just for it.
     """
 
     COLOR = "#121218"
@@ -187,44 +261,61 @@ class opaque_backdrop:
     def __init__(self, hwnd):
         self.hwnd = hwnd
         self.root = None
+        self._was_topmost = False
 
     def __enter__(self):
-        try:
-            x = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
-            y = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
-            width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
-            height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
-            self.root = tk.Tk()
-            self.root.overrideredirect(True)
-            self.root.attributes("-topmost", True)
-            self.root.configure(bg=self.COLOR)
-            self.root.geometry(f"{width}x{height}+{x}+{y}")
-            self.root.update()
-        except tk.TclError as error:
-            print(f"warning: could not create the capture backdrop ({error}); "
-                  f"capturing over whatever is currently on screen")
-            self.root = None
+        x = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+        y = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+        width = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+        height = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+        self.root = _create_overlay_window(width, height, x, y, self.COLOR)
+        if self.root is None:
+            print("warning: capturing over whatever is currently on screen")
         # Creating the backdrop just made it the newest topmost window, which
         # HWND_TOPMOST places at the very top of the topmost band -- above
         # the widget. bring_to_front's SetForegroundWindow can't reliably
         # undo that here (Windows can silently refuse a background process
         # foregrounding a *different* process's window), so reclaim the top
         # with a direct z-order call instead, which carries no such
-        # restriction.
-        user32.SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
+        # restriction. Remember whatever topmost state the widget already
+        # had (a user, or settings.json, may have deliberately pinned it)
+        # so __exit__ can put it back rather than always clearing it.
+        self._was_topmost = bool(user32.GetWindowLongW(self.hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST)
+        if not user32.SetWindowPos(self.hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE):
+            print("warning: could not bring the widget above the capture backdrop; "
+                  "screenshots may show the backdrop instead of the widget")
+        self._wait_for_composited(x, y)
+        return self
+
+    def _wait_for_composited(self, x, y):
         # DWM needs a moment to actually composite the new window before a
         # screen grab reflects it -- without this, the very first capture can
         # win the race and still show whatever was on screen a frame earlier.
+        # Poll the backdrop's own top-left corner (outside the widget's
+        # default footprint -- see capture_warning_banner's HEIGHT note)
+        # for its actual color instead of guessing a fixed duration, so this
+        # only waits as long as the real machine needs, rather than a flat
+        # 0.3s that a slower/loaded machine could lose the race against.
+        if self.root is None:
+            return
+        target = _hex_to_rgb(self.COLOR)
+        deadline = time.monotonic() + 2.0
+        try:
+            while time.monotonic() < deadline:
+                pixel = grab((x, y, x + 1, y + 1)).getpixel((0, 0))
+                if pixel[:3] == target:
+                    return
+                time.sleep(0.05)
+        except OSError:
+            pass
         time.sleep(0.3)
-        return self
 
     def __exit__(self, exc_type, exc, tb):
-        if self.root is not None:
-            try:
-                self.root.destroy()
-            except tk.TclError:
-                pass
+        _destroy_quietly(self.root)
+        if not self._was_topmost:
+            user32.SetWindowPos(self.hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE)
         return False
 
 
@@ -232,41 +323,37 @@ class capture_warning_banner:
     """A always-on-top strip pinned to the very top of the primary screen
     (y=0 through HEIGHT) for the whole capture run, telling whoever is at the
     keyboard not to touch the mouse/keyboard while this script drives real
-    input. HEIGHT is kept comfortably below DEFAULT_SETTINGS["y"] (40 -- see
-    deskwidget_core/config.py) so this can never overlap the widget's own
-    default top-left corner and bleed into any grabbed region, regardless of
-    where on screen the widget ends up being captured.
+    input. HEIGHT is derived from (not just hand-verified against)
+    DEFAULT_SETTINGS["y"] -- the widget's default top-left corner, see
+    deskwidget_core/config.py -- so this can never overlap the widget's own
+    default position and bleed into any grabbed region, and can't silently
+    drift out of sync if that default ever changes.
+
+    Entered *after* opaque_backdrop in main() so it's the newest topmost
+    window and lands above the backdrop (which would otherwise cover this
+    banner's strip too, hiding the one warning telling the user not to touch
+    the keyboard while this script drives real input).
     """
 
-    HEIGHT = 32
+    HEIGHT = min(32, DEFAULT_SETTINGS["y"] - 8)
     BG = "#c0392b"
     FG = "white"
     TEXT = ("自動操作でスクリーンショットを撮影中です。"
             "完了するまでマウス・キーボードに触れないでください。")
 
     def __enter__(self):
-        self.root = None
-        try:
-            self.root = tk.Tk()
-            self.root.overrideredirect(True)
-            self.root.attributes("-topmost", True)
-            width = self.root.winfo_screenwidth()
-            self.root.geometry(f"{width}x{self.HEIGHT}+0+0")
-            self.root.configure(bg=self.BG)
+        width = user32.GetSystemMetrics(SM_CXSCREEN)
+        self.root = _create_overlay_window(width, self.HEIGHT, 0, 0, self.BG)
+        if self.root is not None:
             tk.Label(self.root, text=self.TEXT, bg=self.BG, fg=self.FG,
                      font=("Yu Gothic UI", 11, "bold")).pack(expand=True)
             self.root.update()
-        except tk.TclError as error:
-            print(f"warning: could not show the capture warning banner ({error})")
-            self.root = None
+        else:
+            print("warning: capturing without the on-screen keyboard/mouse warning")
         return self
 
     def __exit__(self, exc_type, exc, tb):
-        if self.root is not None:
-            try:
-                self.root.destroy()
-            except tk.TclError:
-                pass
+        _destroy_quietly(self.root)
         return False
 
 
@@ -357,7 +444,12 @@ def main():
     time.sleep(INITIAL_SETTLE_SECONDS)
 
     lang_toggled = False
-    with capture_warning_banner(), opaque_backdrop(hwnd):
+    # opaque_backdrop first, capture_warning_banner second: each newly
+    # created topmost window lands above every topmost window that already
+    # existed (see opaque_backdrop's own z-order note), so entering the
+    # banner last is what keeps it visible above the backdrop for the whole
+    # run instead of getting buried under it.
+    with opaque_backdrop(hwnd), capture_warning_banner():
         print("Capturing Japanese (default) screenshots...")
         rect, img = capture_main(hwnd, "")
         capture_buttons(rect[2] - rect[0], img, "")

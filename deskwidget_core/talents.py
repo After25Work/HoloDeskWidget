@@ -9,6 +9,13 @@ PRODUCTIONS_INDEX = PRODUCTIONS_DIR / "index.json"
 ALL_PRODUCTION_ID = "__all__"
 ALL_PRODUCTION = {"id": ALL_PRODUCTION_ID, "name": {"ja": "すべて", "en": "All"}}
 
+# Seed value widget.py's _production_slot() gives every talent's state at the
+# start of each app session -- never a real observed live/offline/error
+# result. Shared here (rather than each side hardcoding the string "unknown")
+# so refresh.py's _log_state_transition() can recognize "never checked this
+# session yet" without the two call sites silently drifting apart.
+UNOBSERVED_STATE = "unknown"
+
 # Used only if productions/index.json is missing/corrupt/empty, so the
 # widget always has at least one production to show instead of an empty
 # tab bar and no talents at all.

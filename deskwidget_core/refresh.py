@@ -13,7 +13,7 @@ from urllib.error import HTTPError
 
 from . import stream_log, youtube
 from .paths import log_error
-from .talents import ALL_PRODUCTION_ID
+from .talents import ALL_PRODUCTION_ID, UNOBSERVED_STATE
 
 # Some live titles borrow standalone combining marks/syllabics from scripts
 # no installed font here (Yu Gothic/Meiryo/MS Gothic/Segoe UI Emoji) has
@@ -259,12 +259,12 @@ class RefreshMixin:
         # ordinary blip on a channel that's still live. offline<->error
         # churn (a talent with no scheduled stream hitting an occasional
         # fetch error) is noise the history viewer has no use for either way.
-        # previous_state == "unknown" is _production_slot()'s seed value for
-        # every talent at the start of each app session (never a real
-        # observed state) -- excluding it here keeps a restart while someone
-        # is already live from logging a false "start" for a stream that's
+        # UNOBSERVED_STATE is _production_slot()'s seed value for every
+        # talent at the start of each app session (never a real observed
+        # state) -- excluding it here keeps a restart while someone is
+        # already live from logging a false "start" for a stream that's
         # actually been running since before this session began.
-        if new_state == "live" and previous_state not in ("live", "unknown"):
+        if new_state == "live" and previous_state not in ("live", UNOBSERVED_STATE):
             stream_log.record_event(prod_id, name, "start", title, url)
         elif new_state == "offline" and previous_state == "live":
             stream_log.record_event(prod_id, name, "end")

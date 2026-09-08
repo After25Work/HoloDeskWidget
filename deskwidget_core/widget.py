@@ -28,6 +28,7 @@ from .strings import english_name
 from .talents import (
     ALL_PRODUCTION,
     ALL_PRODUCTION_ID,
+    UNOBSERVED_STATE,
     load_productions,
     load_targets,
     production_display_name,
@@ -251,7 +252,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
             targets = load_targets(self._productions_by_id[prod_id])
             slot = {
                 "targets": targets,
-                "states": {name: "unknown" for name, _, _, _ in targets},
+                "states": {name: UNOBSERVED_STATE for name, _, _, _ in targets},
                 "channel_urls": {},
                 "live_urls": {},
                 "live_titles": {},
