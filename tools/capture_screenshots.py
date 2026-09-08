@@ -35,10 +35,23 @@ import subprocess
 import sys
 import tempfile
 import time
+import tkinter as tk
+import winreg
 from ctypes import wintypes
 from pathlib import Path
 
 from PIL import Image, ImageGrab
+
+# Must happen before any window/screen coordinates are touched below. Without
+# this, this process stays in Windows' legacy DPI-virtualized mode, where
+# GetWindowRect() and ImageGrab.grab() disagree on what a pixel is on any
+# display scaled above 100% -- the resulting bbox drifts from the widget's
+# real on-screen footprint, so captures bleed in whatever sits just outside
+# it (taskbar, other windows) instead of the frozen desktop color.
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+except (AttributeError, OSError):
+    ctypes.windll.user32.SetProcessDPIAware()
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
@@ -77,6 +90,10 @@ user32.mouse_event.argtypes = [wintypes.DWORD, wintypes.DWORD, wintypes.DWORD,
                                 wintypes.DWORD, ctypes.c_void_p]
 user32.keybd_event.argtypes = [ctypes.c_ubyte, ctypes.c_ubyte, wintypes.DWORD, ctypes.c_void_p]
 user32.SystemParametersInfoW.argtypes = [wintypes.UINT, wintypes.UINT, wintypes.LPCWSTR, wintypes.UINT]
+user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+user32.FindWindowW.restype = ctypes.c_void_p
+user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM]
+user32.SendMessageW.restype = ctypes.c_ssize_t
 
 MOUSEEVENTF_LEFTDOWN = 0x0002
 MOUSEEVENTF_LEFTUP = 0x0004
@@ -92,6 +109,12 @@ SPIF_SENDCHANGE = 0x02
 # real system menu of this class, so it can be located and cropped precisely
 # instead of guessing how far the context-menu screenshot needs to extend.
 MENU_WINDOW_CLASS = "#32768"
+# WM_COMMAND id Explorer's Desktop context menu sends for "Show desktop
+# icons" -- posting it to Progman toggles that checkbox exactly like
+# right-clicking the desktop and choosing it does, since there's no direct
+# GetDesktopIconsVisible()-style Win32 call.
+WM_COMMAND = 0x0111
+PROGMAN_TOGGLE_ICONS = 0x7402
 
 
 def get_window_rect(hwnd):
@@ -176,6 +199,93 @@ class frozen_desktop:
             try:
                 os.remove(self.temp_path)
             except OSError:
+                pass
+        return False
+
+
+def _desktop_icons_hidden():
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced",
+        ) as key:
+            value, _ = winreg.QueryValueEx(key, "HideIcons")
+            return bool(value)
+    except OSError:
+        return False  # key/value absent -- icons are shown, Explorer's own default
+
+
+def _toggle_desktop_icons():
+    progman = user32.FindWindowW("Progman", None)
+    if progman:
+        user32.SendMessageW(progman, WM_COMMAND, PROGMAN_TOGGLE_ICONS, 0)
+
+
+class hidden_desktop_icons:
+    """Desktop icons (This PC, Recycle Bin, ...) live in Windows' default
+    top-left icon grid -- right where the widget's own default position
+    (x=40, y=40, see deskwidget_core/config.py's DEFAULT_SETTINGS) puts it.
+    frozen_desktop only swaps the wallpaper *image*; icons are a separate
+    layer Explorer always draws on top of it, so without this they show
+    straight through the widget's transparent rounded corners in every shot.
+    Toggles the same "Show desktop icons" state the Desktop right-click menu
+    does, and only restores it on exit if entering here actually changed
+    anything -- a no-op if icons were already hidden coming in, so this
+    never leaves the user's desktop in a different state than it found it.
+    """
+
+    def __enter__(self):
+        self.toggled = False
+        if not _desktop_icons_hidden():
+            _toggle_desktop_icons()
+            self.toggled = True
+            time.sleep(0.3)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.toggled:
+            _toggle_desktop_icons()
+        return False
+
+
+class capture_warning_banner:
+    """A always-on-top strip pinned to the very top of the primary screen
+    (y=0 through HEIGHT) for the whole capture run, telling whoever is at the
+    keyboard not to touch the mouse/keyboard while this script drives real
+    input. HEIGHT is kept comfortably below DEFAULT_SETTINGS["y"] (40 -- see
+    deskwidget_core/config.py) so this can never overlap the widget's own
+    default top-left corner and bleed into any grabbed region, regardless of
+    where on screen the widget ends up being captured.
+    """
+
+    HEIGHT = 32
+    BG = "#c0392b"
+    FG = "white"
+    TEXT = ("自動操作でスクリーンショットを撮影中です。"
+            "完了するまでマウス・キーボードに触れないでください。")
+
+    def __enter__(self):
+        self.root = None
+        try:
+            self.root = tk.Tk()
+            self.root.overrideredirect(True)
+            self.root.attributes("-topmost", True)
+            width = self.root.winfo_screenwidth()
+            self.root.geometry(f"{width}x{self.HEIGHT}+0+0")
+            self.root.configure(bg=self.BG)
+            tk.Label(self.root, text=self.TEXT, bg=self.BG, fg=self.FG,
+                     font=("Yu Gothic UI", 11, "bold")).pack(expand=True)
+            self.root.update()
+        except tk.TclError as error:
+            print(f"warning: could not show the capture warning banner ({error})")
+            self.root = None
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if self.root is not None:
+            try:
+                self.root.destroy()
+            except tk.TclError:
                 pass
         return False
 
@@ -267,7 +377,7 @@ def main():
     time.sleep(INITIAL_SETTLE_SECONDS)
 
     lang_toggled = False
-    with frozen_desktop():
+    with capture_warning_banner(), hidden_desktop_icons(), frozen_desktop():
         print("Capturing Japanese (default) screenshots...")
         rect, img = capture_main(hwnd, "")
         capture_buttons(rect[2] - rect[0], img, "")
