@@ -30,6 +30,23 @@ SLIDER_GRID_GAP = 22
 # the two silently drift apart on some window sizes.
 GRID_MARGIN = 40
 TARGET_COL_WIDTH = 110
+# Extra right-side padding subtracted from the window width alongside
+# GRID_MARGIN (the left-side one) when computing how much horizontal room
+# the grid/clock content has to work with.
+RIGHT_PADDING = 40
+
+# row_height/divider_height at grid_scale==1 -- the size build_grid_layout()
+# is called with whenever a caller (fit_height(), compute_grid()'s "natural
+# size" probe) just wants the grid's unscaled footprint, before compute_grid()
+# picks whatever scale actually fits the window.
+DEFAULT_ROW_HEIGHT = 25
+DEFAULT_DIVIDER_HEIGHT = 18
+
+# Inset (px) of the drawn panel's rounded-rect edge from the window's own
+# edge (see render()'s panel fill) -- shared with resize_edge() below so the
+# resize hit-band always hugs the panel's actual drawn edge instead of the
+# two silently drifting apart if one is ever changed without the other.
+PANEL_INSET = 20
 
 
 class GridMixin:
@@ -123,10 +140,11 @@ class GridMixin:
         # the window and never reach this widget at all (see the note on
         # resize_grip_rect() above).
         m = self._RESIZE_MARGIN
-        near_left = 20 <= x <= 20 + m
-        near_right = self.width - 20 - m <= x <= self.width - 20
-        near_top = 20 <= y <= 20 + m
-        near_bottom = self.height - 20 - m <= y <= self.height - 20
+        inset = PANEL_INSET
+        near_left = inset <= x <= inset + m
+        near_right = self.width - inset - m <= x <= self.width - inset
+        near_top = inset <= y <= inset + m
+        near_bottom = self.height - inset - m <= y <= self.height - inset
         if near_top and near_left:
             return "nw"
         if near_top and near_right:
@@ -212,62 +230,8 @@ class GridMixin:
                 break
         return clock_entries, clock_texts, clock_cols, col_widths, clock_col_gap
 
-    def build_grid_layout(self, row_height, divider_height, num_cols=None,
-                           clock_row_height=None, clock_divider_height=None,
-                           clock_layout=None, targets=None, states=None):
-        # Shared by render() (drawing) and click() (hit-testing) so the two never
-        # drift apart. Column count grows with the window so widening reflows more
-        # columns in rather than just stretching 3. Talents are grouped by unit
-        # explicitly (not by detecting adjacency in self.targets) so a unit's rows
-        # always merge into one section even if a production's talent-list JSON
-        # ever lists that unit's members non-contiguously. row_height/divider_height
-        # are parameterized so
-        # compute_grid() can shrink them (and the matching font sizes) to fit
-        # everything with no scrolling. num_cols lets compute_grid() try
-        # narrower columns counts than the width alone would give, so a tall
-        # window with few talents wraps into more rows instead of leaving the
-        # bottom of the panel empty. Unlike the world clock's own sub-grid
-        # below (always natural_cols-pitched), the talent grid's column width
-        # stretches to available/num_cols whenever compute_grid() picks fewer
-        # columns than natural_cols — otherwise the freed-up columns would
-        # just sit empty on the right instead of giving compute_grid() a
-        # wider (and therefore taller-scaling) pitch to size the shared label
-        # font against.
-        margin, target_col_width = GRID_MARGIN, TARGET_COL_WIDTH
-        available = self.width - margin - 40
-        natural_cols = max(1, int(available // target_col_width))
-        if num_cols is None:
-            num_cols = natural_cols
-        # The world clock's own row/divider height defaults to the talent
-        # grid's (for callers that don't care, e.g. compute_grid()'s own
-        # "natural size at scale 1" probe) but compute_grid()'s real render
-        # pass always supplies its own fixed values — see the note by
-        # clock_row_height in compute_grid() for why the clock section can't
-        # just use row_height/divider_height like everything else here.
-        if clock_row_height is None:
-            clock_row_height = row_height
-        if clock_divider_height is None:
-            clock_divider_height = divider_height
-        units = {}
-        # Read the targets/states properties once up front rather than once
-        # per loop iteration -- for the "All" tab (active_production ==
-        # ALL_PRODUCTION_ID) each read re-merges every visible production's
-        # dict from scratch (see _merge_all_slots()), so calling it inside
-        # this loop turned an O(N) pass into an O(N^2) one across a few
-        # hundred talents, repeated for every candidate column count
-        # compute_grid() tries and on every ~60ms ticker tick. compute_grid()
-        # merges these once itself and passes them straight through (see its
-        # own note) so the merge doesn't repeat once per candidate column
-        # count on top of that; callers that don't have a merge on hand yet
-        # (fit_height()'s one-shot call) just let this fall through to self.
-        targets = self.targets if targets is None else targets
-        states = self.states if states is None else states
-        for index, target in enumerate(targets):
-            if self.live_only and states[target[0]] != "live":
-                continue
-            units.setdefault(target[3], []).append(index)
-        layout_items = []
-        y = self.grid_top()
+    def _layout_clock_section(self, layout_items, y, margin, available, natural_cols,
+                               clock_row_height, clock_divider_height, clock_layout):
         # World clock: shown as its own category using the exact same
         # divider-header + grid mechanics as a talent unit below, so it
         # scales with everything else instead of living in a separately
@@ -277,7 +241,8 @@ class GridMixin:
         # the talent grid's possibly-overridden num_cols) rather than
         # num_cols, since a date+time string is far longer than a talent
         # name and the clock should look the same regardless of how the
-        # talent grid below wraps.
+        # talent grid below wraps. Appends its divider + grid cells to
+        # layout_items and returns the y position just below the section.
         layout_items.append({"type": "divider", "kind": "clock", "y": y,
                               "unit": self.t("clock_category"), "h": clock_divider_height})
         y += clock_divider_height
@@ -318,6 +283,14 @@ class GridMixin:
                 y += clock_row_height
         if col != 0:
             y += clock_row_height
+        return y
+
+    def _layout_talent_section(self, layout_items, y, margin, available, num_cols,
+                                row_height, divider_height, units):
+        # Appends each unit's divider/rows (and, on the "All" tab, its
+        # shaded background band) to layout_items and returns the y
+        # position just below the talent grid.
+        #
         # While the live-only filter is on, every remaining talent is live, so
         # give each its own full-width row (one line per talent) instead of the
         # normal grid columns — that's the room the program-title ticker in
@@ -360,7 +333,126 @@ class GridMixin:
                 layout_items.insert(band_index, {"type": "band", "y": band_start_y,
                                                   "h": y - band_start_y, "position": group_position})
                 group_position += 1
+        return y
+
+    def build_grid_layout(self, row_height, divider_height, num_cols=None,
+                           clock_row_height=None, clock_divider_height=None,
+                           clock_layout=None, targets=None, states=None):
+        # Shared by render() (drawing) and click() (hit-testing) so the two never
+        # drift apart. Column count grows with the window so widening reflows more
+        # columns in rather than just stretching 3. Talents are grouped by unit
+        # explicitly (not by detecting adjacency in self.targets) so a unit's rows
+        # always merge into one section even if a production's talent-list JSON
+        # ever lists that unit's members non-contiguously. row_height/divider_height
+        # are parameterized so
+        # compute_grid() can shrink them (and the matching font sizes) to fit
+        # everything with no scrolling. num_cols lets compute_grid() try
+        # narrower columns counts than the width alone would give, so a tall
+        # window with few talents wraps into more rows instead of leaving the
+        # bottom of the panel empty. Unlike the world clock's own sub-grid
+        # below (always natural_cols-pitched), the talent grid's column width
+        # stretches to available/num_cols whenever compute_grid() picks fewer
+        # columns than natural_cols — otherwise the freed-up columns would
+        # just sit empty on the right instead of giving compute_grid() a
+        # wider (and therefore taller-scaling) pitch to size the shared label
+        # font against.
+        margin, target_col_width = GRID_MARGIN, TARGET_COL_WIDTH
+        available = self.width - margin - RIGHT_PADDING
+        natural_cols = max(1, int(available // target_col_width))
+        if num_cols is None:
+            num_cols = natural_cols
+        # The world clock's own row/divider height defaults to the talent
+        # grid's (for callers that don't care, e.g. compute_grid()'s own
+        # "natural size at scale 1" probe) but compute_grid()'s real render
+        # pass always supplies its own fixed values — see the note by
+        # clock_row_height in compute_grid() for why the clock section can't
+        # just use row_height/divider_height like everything else here.
+        if clock_row_height is None:
+            clock_row_height = row_height
+        if clock_divider_height is None:
+            clock_divider_height = divider_height
+        units = {}
+        # Read the targets/states properties once up front rather than once
+        # per loop iteration -- for the "All" tab (active_production ==
+        # ALL_PRODUCTION_ID) each read re-merges every visible production's
+        # dict from scratch (see _merge_all_slots()), so calling it inside
+        # this loop turned an O(N) pass into an O(N^2) one across a few
+        # hundred talents, repeated for every candidate column count
+        # compute_grid() tries and on every ~60ms ticker tick. compute_grid()
+        # merges these once itself and passes them straight through (see its
+        # own note) so the merge doesn't repeat once per candidate column
+        # count on top of that; callers that don't have a merge on hand yet
+        # (fit_height()'s one-shot call) just let this fall through to self.
+        targets = self.targets if targets is None else targets
+        states = self.states if states is None else states
+        for index, target in enumerate(targets):
+            if self.live_only and states[target[0]] != "live":
+                continue
+            units.setdefault(target[3], []).append(index)
+        layout_items = []
+        y = self.grid_top()
+        y = self._layout_clock_section(layout_items, y, margin, available, natural_cols,
+                                        clock_row_height, clock_divider_height, clock_layout)
+        y = self._layout_talent_section(layout_items, y, margin, available, num_cols,
+                                         row_height, divider_height, units)
         return layout_items, y
+
+    def _widest_fit(self, labels, max_label_width, bold=True):
+        # Largest integer font size at/above 16 for which every label in
+        # `labels` still fits max_label_width — found by doubling until
+        # it no longer fits, then binary-searching that bracket, so the
+        # cost stays ~log2(answer) regardless of how far a very wide
+        # column (or a very short name) lets this grow, rather than
+        # scanning every point size up to whatever the ceiling turns out
+        # to be. Uses the cached _label_width() rather than a fresh
+        # getbbox() per check: this runs once per candidate column count
+        # in compute_grid()'s search below, and neighboring candidates'
+        # searches revisit a lot of the same (label, size) pairs.
+        def fits(size):
+            return all(self._label_width(label, size, bold) <= max_label_width
+                       for label in labels)
+        lo, hi = 16, 16
+        while fits(hi * 2):
+            hi *= 2
+        hi *= 2
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if fits(mid):
+                lo = mid
+            else:
+                hi = mid - 1
+        return lo
+
+    def _label_fit_scale(self, all_labels, col_width):
+        # How far row/divider height (and, via label_scale in render(),
+        # the shared talent-label font) may grow past 1x at this column
+        # width before the widest *normal-length* visible name (all_labels,
+        # gathered once by compute_grid() -- see
+        # _visible_talent_labels()/_shared_label_size()) would stop
+        # fitting it — otherwise render() would have to shrink the shared
+        # font back down to make everyone fit (see the note above render()'s
+        # talent loop), leaving rows taller than the text now sitting
+        # inside them. Names that don't even fit at the normal 1x size
+        # (e.g. a long EN transliterated name) are excluded from this
+        # check rather than left to drag the ceiling down to 1x for
+        # every *other* name in the room — they're headed for
+        # _fit_label()'s ellipsis truncation regardless of scale (dense
+        # rosters like hololive's already relied on exactly that before
+        # any of this growth/wrap logic existed), so their presence
+        # shouldn't cancel out growth that every normal-length name
+        # could otherwise use. No flat readability ceiling above 1x:
+        # unlike the old fixed 1.5x cap, a gap left on screen is worse
+        # than text this column can genuinely still fit — measure()'s
+        # own raw_scale (bounded by the actual available height) is what
+        # stops this from growing past what the window can show.
+        if not all_labels:
+            return 1.5
+        max_label_width = col_width - 12
+        labels = [label for label in all_labels
+                  if self._label_width(label, 16, True) <= max_label_width]
+        if not labels:
+            return 1.5
+        return self._widest_fit(labels, max_label_width) / 16
 
     def compute_grid(self, targets=None, states=None):
         # No scroll support: rows/dividers/fonts scale uniformly so nothing is
@@ -371,7 +463,7 @@ class GridMixin:
         grid_top = self.grid_top()
         available_height = max(1, self.height - grid_top - 90)
         margin, target_col_width = GRID_MARGIN, TARGET_COL_WIDTH
-        available_width = self.width - margin - 40
+        available_width = self.width - margin - RIGHT_PADDING
         natural_cols = max(1, int(available_width // target_col_width))
 
         # The world clock's row/divider height is pinned to the text-size
@@ -387,8 +479,8 @@ class GridMixin:
         # subtracted from each candidate's natural content height so the
         # resulting talent-only scale isn't skewed by clock rows that no
         # longer actually scale with it.
-        clock_row_height = 25 * self.text_scale
-        clock_divider_height = 18 * self.text_scale
+        clock_row_height = DEFAULT_ROW_HEIGHT * self.text_scale
+        clock_divider_height = DEFAULT_DIVIDER_HEIGHT * self.text_scale
         # Column count must match _clock_layout()'s own search (used by
         # build_grid_layout() to actually draw the clock) rather than the
         # naive min(natural_cols, 3) this used to hardcode here -- on a
@@ -410,7 +502,7 @@ class GridMixin:
         clock_entries, _, clock_cols, _, _ = clock_layout
         clock_rows = -(-len(clock_entries) // clock_cols)
         clock_height = clock_divider_height + clock_rows * clock_row_height
-        clock_base_height = 18 + clock_rows * 25
+        clock_base_height = DEFAULT_DIVIDER_HEIGHT + clock_rows * DEFAULT_ROW_HEIGHT
         available_height = max(1, available_height - clock_height)
 
         # Merged once here rather than left for each measure() candidate's
@@ -449,62 +541,6 @@ class GridMixin:
         # inside the per-candidate closure.
         all_labels = None if self.live_only else self._visible_talent_labels(targets, states)
 
-        def widest_fit(labels, max_label_width, bold=True):
-            # Largest integer font size at/above 16 for which every label in
-            # `labels` still fits max_label_width — found by doubling until
-            # it no longer fits, then binary-searching that bracket, so the
-            # cost stays ~log2(answer) regardless of how far a very wide
-            # column (or a very short name) lets this grow, rather than
-            # scanning every point size up to whatever the ceiling turns out
-            # to be. Uses the cached _label_width() rather than a fresh
-            # getbbox() per check: this runs once per candidate column count
-            # in the search below, and neighboring candidates' searches
-            # revisit a lot of the same (label, size) pairs.
-            def fits(size):
-                return all(self._label_width(label, size, bold) <= max_label_width
-                           for label in labels)
-            lo, hi = 16, 16
-            while fits(hi * 2):
-                hi *= 2
-            hi *= 2
-            while lo < hi:
-                mid = (lo + hi + 1) // 2
-                if fits(mid):
-                    lo = mid
-                else:
-                    hi = mid - 1
-            return lo
-
-        def label_fit_scale(col_width):
-            # How far row/divider height (and, via label_scale in render(),
-            # the shared talent-label font) may grow past 1x at this column
-            # width before the widest *normal-length* visible name would stop
-            # fitting it (see _visible_talent_labels()/_shared_label_size())
-            # — otherwise render() would have to shrink the shared font back
-            # down to make everyone fit (see the note above render()'s
-            # talent loop), leaving rows taller than the text now sitting
-            # inside them. Names that don't even fit at the normal 1x size
-            # (e.g. a long EN transliterated name) are excluded from this
-            # check rather than left to drag the ceiling down to 1x for
-            # every *other* name in the room — they're headed for
-            # _fit_label()'s ellipsis truncation regardless of scale (dense
-            # rosters like hololive's already relied on exactly that before
-            # any of this growth/wrap logic existed), so their presence
-            # shouldn't cancel out growth that every normal-length name
-            # could otherwise use. No flat readability ceiling above 1x:
-            # unlike the old fixed 1.5x cap, a gap left on screen is worse
-            # than text this column can genuinely still fit — measure()'s
-            # own raw_scale (bounded by the actual available height) is what
-            # stops this from growing past what the window can show.
-            if not all_labels:
-                return 1.5
-            max_label_width = col_width - 12
-            labels = [label for label in all_labels
-                      if self._label_width(label, 16, True) <= max_label_width]
-            if not labels:
-                return 1.5
-            return widest_fit(labels, max_label_width) / 16
-
         def measure(cols):
             # build_grid_layout() stretches its talent column pitch to
             # available_width/cols whenever cols < natural_cols (see its own
@@ -513,8 +549,8 @@ class GridMixin:
             # count widens each column, which can raise the ceiling (more
             # room per name) even as it also raises content_height (fewer
             # columns means more rows).
-            scale_cap = label_fit_scale(available_width / cols)
-            _, natural_end = self.build_grid_layout(25, 18, num_cols=cols,
+            scale_cap = self._label_fit_scale(all_labels, available_width / cols)
+            _, natural_end = self.build_grid_layout(DEFAULT_ROW_HEIGHT, DEFAULT_DIVIDER_HEIGHT, num_cols=cols,
                                                       clock_layout=clock_layout,
                                                       targets=targets, states=states)
             content_height = max(1, natural_end - grid_top - clock_base_height)
@@ -534,8 +570,8 @@ class GridMixin:
             cand_scale = measure(cols)
             if cand_scale > scale:
                 num_cols, scale = cols, cand_scale
-        row_height = 25 * scale
-        divider_height = 18 * scale
+        row_height = DEFAULT_ROW_HEIGHT * scale
+        divider_height = DEFAULT_DIVIDER_HEIGHT * scale
         # The label-fit ceiling derived above (or raw_scale itself, if that's
         # smaller) is what keeps rows from ballooning past what a very tall
         # window with little content (e.g. a small custom list on a

@@ -130,54 +130,39 @@ _user32 = ctypes.WinDLL("user32", use_last_error=True)
 _shell32 = ctypes.WinDLL("shell32", use_last_error=True)
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
-_user32.DefWindowProcW.argtypes = [wintypes.HWND, ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM]
-_user32.DefWindowProcW.restype = LRESULT
-_user32.RegisterClassW.argtypes = [ctypes.POINTER(_WNDCLASSW)]
-_user32.RegisterClassW.restype = wintypes.ATOM
-_user32.UnregisterClassW.argtypes = [wintypes.LPCWSTR, wintypes.HINSTANCE]
-_user32.UnregisterClassW.restype = wintypes.BOOL
-_user32.CreateWindowExW.argtypes = [
+
+def _bind(func, argtypes, restype):
+    func.argtypes = argtypes
+    func.restype = restype
+
+
+_bind(_user32.DefWindowProcW, [wintypes.HWND, ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM], LRESULT)
+_bind(_user32.RegisterClassW, [ctypes.POINTER(_WNDCLASSW)], wintypes.ATOM)
+_bind(_user32.UnregisterClassW, [wintypes.LPCWSTR, wintypes.HINSTANCE], wintypes.BOOL)
+_bind(_user32.CreateWindowExW, [
     wintypes.DWORD, wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD,
     ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
     wintypes.HWND, wintypes.HMENU, wintypes.HINSTANCE, wintypes.LPVOID,
-]
-_user32.CreateWindowExW.restype = wintypes.HWND
-_user32.DestroyWindow.argtypes = [wintypes.HWND]
-_user32.DestroyWindow.restype = wintypes.BOOL
-_user32.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, ctypes.c_uint,
-                                ctypes.c_int, ctypes.c_int, ctypes.c_uint]
-_user32.LoadImageW.restype = wintypes.HICON
-_user32.LoadIconW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR]
-_user32.LoadIconW.restype = wintypes.HICON
-_user32.GetSystemMetrics.argtypes = [ctypes.c_int]
-_user32.GetSystemMetrics.restype = ctypes.c_int
-_user32.CreatePopupMenu.argtypes = []
-_user32.CreatePopupMenu.restype = wintypes.HMENU
-_user32.DestroyMenu.argtypes = [wintypes.HMENU]
-_user32.DestroyMenu.restype = wintypes.BOOL
-_user32.AppendMenuW.argtypes = [wintypes.HMENU, ctypes.c_uint, ctypes.c_size_t, wintypes.LPCWSTR]
-_user32.AppendMenuW.restype = wintypes.BOOL
-_user32.TrackPopupMenu.argtypes = [wintypes.HMENU, ctypes.c_uint, ctypes.c_int, ctypes.c_int,
-                                    ctypes.c_int, wintypes.HWND, ctypes.c_void_p]
-_user32.TrackPopupMenu.restype = wintypes.BOOL
-_user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
-_user32.GetCursorPos.restype = wintypes.BOOL
-_user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-_user32.SetForegroundWindow.restype = wintypes.BOOL
-_user32.PostMessageW.argtypes = [wintypes.HWND, ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM]
-_user32.PostMessageW.restype = wintypes.BOOL
-_user32.GetMessageW.argtypes = [ctypes.POINTER(_MSG), wintypes.HWND, ctypes.c_uint, ctypes.c_uint]
-_user32.GetMessageW.restype = ctypes.c_int
-_user32.TranslateMessage.argtypes = [ctypes.POINTER(_MSG)]
-_user32.TranslateMessage.restype = wintypes.BOOL
-_user32.DispatchMessageW.argtypes = [ctypes.POINTER(_MSG)]
-_user32.DispatchMessageW.restype = LRESULT
-_user32.PostQuitMessage.argtypes = [ctypes.c_int]
-_user32.PostQuitMessage.restype = None
-_kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
-_kernel32.GetModuleHandleW.restype = wintypes.HMODULE
-_shell32.Shell_NotifyIconW.argtypes = [ctypes.c_uint32, ctypes.POINTER(_NOTIFYICONDATAW)]
-_shell32.Shell_NotifyIconW.restype = wintypes.BOOL
+], wintypes.HWND)
+_bind(_user32.DestroyWindow, [wintypes.HWND], wintypes.BOOL)
+_bind(_user32.LoadImageW, [wintypes.HINSTANCE, wintypes.LPCWSTR, ctypes.c_uint,
+                            ctypes.c_int, ctypes.c_int, ctypes.c_uint], wintypes.HICON)
+_bind(_user32.LoadIconW, [wintypes.HINSTANCE, wintypes.LPCWSTR], wintypes.HICON)
+_bind(_user32.GetSystemMetrics, [ctypes.c_int], ctypes.c_int)
+_bind(_user32.CreatePopupMenu, [], wintypes.HMENU)
+_bind(_user32.DestroyMenu, [wintypes.HMENU], wintypes.BOOL)
+_bind(_user32.AppendMenuW, [wintypes.HMENU, ctypes.c_uint, ctypes.c_size_t, wintypes.LPCWSTR], wintypes.BOOL)
+_bind(_user32.TrackPopupMenu, [wintypes.HMENU, ctypes.c_uint, ctypes.c_int, ctypes.c_int,
+                                ctypes.c_int, wintypes.HWND, ctypes.c_void_p], wintypes.BOOL)
+_bind(_user32.GetCursorPos, [ctypes.POINTER(wintypes.POINT)], wintypes.BOOL)
+_bind(_user32.SetForegroundWindow, [wintypes.HWND], wintypes.BOOL)
+_bind(_user32.PostMessageW, [wintypes.HWND, ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM], wintypes.BOOL)
+_bind(_user32.GetMessageW, [ctypes.POINTER(_MSG), wintypes.HWND, ctypes.c_uint, ctypes.c_uint], ctypes.c_int)
+_bind(_user32.TranslateMessage, [ctypes.POINTER(_MSG)], wintypes.BOOL)
+_bind(_user32.DispatchMessageW, [ctypes.POINTER(_MSG)], LRESULT)
+_bind(_user32.PostQuitMessage, [ctypes.c_int], None)
+_bind(_kernel32.GetModuleHandleW, [wintypes.LPCWSTR], wintypes.HMODULE)
+_bind(_shell32.Shell_NotifyIconW, [ctypes.c_uint32, ctypes.POINTER(_NOTIFYICONDATAW)], wintypes.BOOL)
 
 # Derived from WINDOW_TITLE (already unique per variant -- see paths.py) so a
 # sibling variant built from this same codebase never collides with this

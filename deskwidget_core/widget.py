@@ -17,14 +17,13 @@ from .config import (
     save_settings,
 )
 from .fonts import set_font_family
-from .grid_layout import GridMixin
+from .grid_layout import DEFAULT_DIVIDER_HEIGHT, DEFAULT_ROW_HEIGHT, GridMixin
 from .interaction import InteractionMixin
 from .menus import MenuMixin
 from .paths import ROOT, WINDOW_TITLE, log_error
 from .rendering import RenderingMixin
 from .refresh import RefreshMixin
 from .single_instance import bring_to_front
-from .strings import english_name
 from .talents import (
     ALL_PRODUCTION,
     ALL_PRODUCTION_ID,
@@ -75,6 +74,11 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.ticker_last_tick = time.time()
         self.last_opened = (None, 0.0)
         self.refresh_in_progress = False
+        settings = self._load_settings()
+        self._init_window(settings)
+        self._schedule_startup()
+
+    def _load_settings(self):
         settings = load_settings()
         self.background_alpha = settings["background_alpha"]
         self.lang = settings["lang"]
@@ -96,13 +100,18 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         valid_ids = {p["id"] for p in self.productions}
         saved_enabled = [pid for pid in settings["enabled_productions"] if pid in valid_ids]
         self.enabled_productions = set(saved_enabled) if saved_enabled else set(valid_ids)
+        self.width, self.height = settings["width"], settings["height"]
+        # Returned (not just applied to self) since _init_window() still
+        # needs settings["x"]/["y"] for the initial geometry() call below.
+        return settings
+
+    def _init_window(self, settings):
         self.suppress_next_click = False
         self.menu_reopen_guard: Optional[str] = None
         self.slider_drag = False
         self.render_pending = False
         self.geometry_pending = False
         self.last_updated: Optional[str] = None
-        self.width, self.height = settings["width"], settings["height"]
         # Attributes below only ever materialize conditionally in the old
         # single-file version (via hasattr/getattr/del), which is what let
         # _all_height go unset and produce the live-only-filter height bug
@@ -164,6 +173,8 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # the save) run first, so by the time Windows' own handling follows,
         # there's nothing left for it to do.
         self.root.bind("<Alt-F4>", lambda event: self.close())
+
+    def _schedule_startup(self):
         self.root.after(100, self.setup_layered_window)
         self.root.after(300, self.refresh)
         self.root.after(1000, self.tick_clock)
@@ -399,8 +410,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
             state = states[name]
             if self.live_only and state != "live":
                 continue
-            bullet = "● " if state == "live" else "! " if state == "error" else "• "
-            display_name = name if self.lang == "ja" else english_name(slug)
+            bullet, display_name = self.talent_bullet_and_display_name(name, slug, state, self.lang)
             labels.append(bullet + display_name)
         return labels
 
@@ -523,7 +533,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
 
     def _fit_height_value(self):
         if self.live_only:
-            _, natural_end = self.build_grid_layout(25, 18)
+            _, natural_end = self.build_grid_layout(DEFAULT_ROW_HEIGHT, DEFAULT_DIVIDER_HEIGHT)
             target_height = natural_end + 90
         else:
             target_height = self._all_height

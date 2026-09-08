@@ -7,9 +7,19 @@ import tkinter as tk
 import webbrowser
 
 from . import appconfig, stream_log
+from .config import FONT_UI_REGULAR, FONT_UI_SMALL, FONT_UI_SMALL_BOLD, FONT_UI_SMALL_UNDERLINE, FONT_UI_TINY
 from .fonts import family_display_name, list_installed_fonts, set_font_family
 from .talents import ALL_PRODUCTION_ID, production_display_name
 from .theme import THEME_PALETTE
+
+# Dark text color used on top of the accent color, both for a hovered
+# top-level menu item (_menu_colors' activeforeground) and a selected font
+# in the font picker's Listbox (selectforeground) -- named once so the two
+# roles can't quietly drift apart.
+_ACCENT_TEXT_COLOR = "#18181f"
+
+HISTORY_LIST_MAX_EVENTS = 300
+HISTORY_WINDOW_SIZE = "560x420"
 
 
 class MenuMixin:
@@ -27,7 +37,7 @@ class MenuMixin:
         return dict(
             bg=self._hex(self.tint(colors["neutral_btn"])), fg=self._hex(colors["text"]),
             activebackground=self._hex(self.accent_color()),
-            activeforeground=self._hex((24, 24, 31)),
+            activeforeground=_ACCENT_TEXT_COLOR,
         )
 
     def _close_popup(self, attr_name, after_close=None):
@@ -41,24 +51,42 @@ class MenuMixin:
             if after_close is not None:
                 after_close()
 
-    def toggle_palette(self):
-        if self.palette_win is not None:
-            self.close_palette()
+    def _make_popup_toplevel(self, bg):
+        # Shared shape for every anchored-under-its-button popup (palette,
+        # font picker, productions checklist): borderless, always-on-top,
+        # background set up front so each widget added below doesn't need
+        # its own bg= boilerplate to match.
+        win = tk.Toplevel(self.root)
+        win.overrideredirect(True)
+        win.attributes("-topmost", True)
+        win.configure(bg=bg)
+        return win
+
+    def _toggle_popup(self, attr_name, open_fn):
+        if getattr(self, attr_name) is not None:
+            self._close_popup(attr_name)
             return
-        self.open_palette()
+        open_fn()
+
+    @staticmethod
+    def _checked_label(label, checked):
+        # Plain command labels with a "✓ " prefix when active, not
+        # checkbuttons/radiobuttons -- a native checkmark glyph is barely
+        # visible against this app's custom dark menu colors.
+        return f"✓ {label}" if checked else label
+
+    def toggle_palette(self):
+        self._toggle_popup("palette_win", self.open_palette)
 
     def open_palette(self):
         colors = self.theme_colors()
         panel_hex = self._hex(colors["panel"][:3])
         muted_hex = self._hex(colors["muted"][:3])
-        win = tk.Toplevel(self.root)
+        win = self._make_popup_toplevel(panel_hex)
         self.palette_win = win
-        win.overrideredirect(True)
-        win.attributes("-topmost", True)
-        win.configure(bg=panel_hex)
         cols, swatch = 5, 40
         preview = tk.Label(win, text=self.t("palette_hint"), bg=panel_hex, fg=muted_hex,
-                           font=("Yu Gothic UI", 9, "bold"), anchor="w")
+                           font=FONT_UI_SMALL_BOLD, anchor="w")
         preview.grid(row=0, column=0, columnspan=cols, sticky="we", padx=6, pady=(6, 2))
         for i, (name, rgb) in enumerate(THEME_PALETTE):
             row, col = divmod(i, cols)
@@ -90,10 +118,7 @@ class MenuMixin:
         self.render()
 
     def toggle_font_menu(self):
-        if self.font_win is not None:
-            self.close_font_menu()
-            return
-        self.open_font_menu()
+        self._toggle_popup("font_win", self.open_font_menu)
 
     def open_font_menu(self):
         # Same overrideredirect-Toplevel-anchored-under-its-button pattern as
@@ -105,11 +130,8 @@ class MenuMixin:
         text_hex = self._hex(colors["text"])
         muted_hex = self._hex(colors["muted"])
         accent_hex = self._hex(self.accent_color()[:3])
-        win = tk.Toplevel(self.root)
+        win = self._make_popup_toplevel(panel_hex)
         self.font_win = win
-        win.overrideredirect(True)
-        win.attributes("-topmost", True)
-        win.configure(bg=panel_hex)
 
         all_families = [name for name, _files in list_installed_fonts()]
         # Populated by refresh_list() below with the (family, display_name)
@@ -121,13 +143,13 @@ class MenuMixin:
         current_matches = []
 
         hint = tk.Label(win, text=self.t("font_hint"), bg=panel_hex, fg=muted_hex,
-                        font=("Yu Gothic UI", 9, "bold"), anchor="w")
+                        font=FONT_UI_SMALL_BOLD, anchor="w")
         hint.grid(row=0, column=0, sticky="we", padx=8, pady=(6, 2))
         search_var = tk.StringVar()
         entry = tk.Entry(win, textvariable=search_var, bg=panel_hex, fg=text_hex,
                          insertbackground=text_hex, relief="flat",
                          highlightthickness=1, highlightbackground=muted_hex,
-                         highlightcolor=accent_hex, font=("Yu Gothic UI", 10))
+                         highlightcolor=accent_hex, font=FONT_UI_REGULAR)
         entry.grid(row=1, column=0, sticky="we", padx=8, pady=(0, 4))
         list_frame = tk.Frame(win, bg=panel_hex)
         list_frame.grid(row=2, column=0, padx=8, pady=(0, 8))
@@ -135,8 +157,8 @@ class MenuMixin:
         scrollbar.pack(side="right", fill="y")
         listbox = tk.Listbox(
             list_frame, bg=panel_hex, fg=text_hex, selectbackground=accent_hex,
-            selectforeground="#1a1a1f", activestyle="none", highlightthickness=0,
-            borderwidth=0, font=("Yu Gothic UI", 10), width=30, height=10,
+            selectforeground=_ACCENT_TEXT_COLOR, activestyle="none", highlightthickness=0,
+            borderwidth=0, font=FONT_UI_REGULAR, width=30, height=10,
             yscrollcommand=scrollbar.set, exportselection=False,
         )
         listbox.pack(side="left", fill="both", expand=True)
@@ -221,10 +243,7 @@ class MenuMixin:
         self.render()
 
     def toggle_productions_menu(self):
-        if self.productions_win is not None:
-            self.close_productions_menu()
-            return
-        self.open_productions_menu()
+        self._toggle_popup("productions_win", self.open_productions_menu)
 
     def open_productions_menu(self):
         # Same overrideredirect-Toplevel-anchored-under-its-button pattern as
@@ -234,13 +253,10 @@ class MenuMixin:
         colors = self.theme_colors()
         panel_hex = self._hex(self.tint(colors["panel"][:3]))
         text_hex = self._hex(colors["text"])
-        win = tk.Toplevel(self.root)
+        win = self._make_popup_toplevel(panel_hex)
         self.productions_win = win
-        win.overrideredirect(True)
-        win.attributes("-topmost", True)
-        win.configure(bg=panel_hex)
         hint = tk.Label(win, text=self.t("productions_hint"), bg=panel_hex, fg=self._hex(colors["muted"]),
-                        font=("Yu Gothic UI", 9, "bold"), anchor="w")
+                        font=FONT_UI_SMALL_BOLD, anchor="w")
         hint.grid(row=0, column=0, sticky="we", padx=8, pady=(6, 2))
         self._production_menu_vars = []
         for i, production in enumerate(self.productions):
@@ -251,7 +267,7 @@ class MenuMixin:
                 win, text=production_display_name(production, self.lang), variable=var,
                 command=lambda prod_id=prod_id, var=var: self._on_production_toggle(prod_id, var),
                 bg=panel_hex, fg=text_hex, activebackground=panel_hex, activeforeground=text_hex,
-                selectcolor=panel_hex, anchor="w", font=("Yu Gothic UI", 10),
+                selectcolor=panel_hex, anchor="w", font=FONT_UI_REGULAR,
                 highlightthickness=0, borderwidth=0,
             )
             cb.grid(row=i + 1, column=0, sticky="w", padx=8, pady=2)
@@ -260,13 +276,13 @@ class MenuMixin:
         button_bar.grid(row=button_row, column=0, sticky="we", padx=8, pady=(4, 6))
         enable_all_btn = tk.Label(
             button_bar, text=self.t("productions_enable_all"), bg=panel_hex, fg=text_hex,
-            font=("Yu Gothic UI", 9, "underline"), cursor="hand2",
+            font=FONT_UI_SMALL_UNDERLINE, cursor="hand2",
         )
         enable_all_btn.pack(side="left")
         enable_all_btn.bind("<Button-1>", lambda event: self._set_all_productions_enabled(True))
         disable_all_btn = tk.Label(
             button_bar, text=self.t("productions_disable_all"), bg=panel_hex, fg=text_hex,
-            font=("Yu Gothic UI", 9, "underline"), cursor="hand2",
+            font=FONT_UI_SMALL_UNDERLINE, cursor="hand2",
         )
         disable_all_btn.pack(side="left", padx=(12, 0))
         disable_all_btn.bind("<Button-1>", lambda event: self._set_all_productions_enabled(False))
@@ -341,12 +357,12 @@ class MenuMixin:
         # checkbuttons — like dark_mode below, a Menu checkbutton's native
         # checkmark glyph is barely visible against this menu's custom dark
         # colors, so pin/live_only would otherwise look permanently unchecked.
-        pin_label = f"✓ {self.t('pin')}" if self.topmost else self.t("pin")
-        menu.add_command(label=pin_label, command=self.toggle_topmost)
-        fullscreen_label = f"✓ {self.t('fullscreen')}" if self.is_fullscreen else self.t("fullscreen")
-        menu.add_command(label=fullscreen_label, command=self.toggle_fullscreen)
-        live_label = f"✓ {self.t('live_filter')}" if self.live_only else self.t("live_filter")
-        menu.add_command(label=live_label, command=self.toggle_live_only)
+        menu.add_command(label=self._checked_label(self.t("pin"), self.topmost),
+                         command=self.toggle_topmost)
+        menu.add_command(label=self._checked_label(self.t("fullscreen"), self.is_fullscreen),
+                         command=self.toggle_fullscreen)
+        menu.add_command(label=self._checked_label(self.t("live_filter"), self.live_only),
+                         command=self.toggle_live_only)
         # Label names the CURRENT mode (like draw_mode_button()'s moon/sun icon),
         # not a fixed "Dark Mode" checkbox, for the same reason.
         menu.add_command(label=self.t("dark_mode") if self.dark_mode else self.t("light_mode"),
@@ -355,10 +371,10 @@ class MenuMixin:
         lang_menu = tk.Menu(menu, tearoff=0, **self._menu_colors(colors))
         # Plain commands with a "✓ " prefix on the active language, not
         # radiobuttons — same invisible-indicator issue as pin/live_only above.
-        ja_label = f"✓ {self.t('lang_ja')}" if self.lang == "ja" else self.t("lang_ja")
-        lang_menu.add_command(label=ja_label, command=lambda: self.set_lang("ja"))
-        en_label = f"✓ {self.t('lang_en')}" if self.lang == "en" else self.t("lang_en")
-        lang_menu.add_command(label=en_label, command=lambda: self.set_lang("en"))
+        lang_menu.add_command(label=self._checked_label(self.t("lang_ja"), self.lang == "ja"),
+                              command=lambda: self.set_lang("ja"))
+        lang_menu.add_command(label=self._checked_label(self.t("lang_en"), self.lang == "en"),
+                              command=lambda: self.set_lang("en"))
         menu.add_cascade(label=self.t("language"), menu=lang_menu)
         # A single-production variant has nothing to filter (see
         # has_multiple_productions()/production_tabs()), so this cascade
@@ -380,7 +396,7 @@ class MenuMixin:
             for production in self.productions:
                 prod_id = production["id"]
                 label = production_display_name(production, self.lang)
-                checked_label = f"✓ {label}" if prod_id in self.enabled_productions else label
+                checked_label = self._checked_label(label, prod_id in self.enabled_productions)
                 productions_menu.add_command(label=checked_label,
                                              command=lambda pid=prod_id: self.toggle_production(pid))
             menu.add_cascade(label=self.t("productions_button"), menu=productions_menu)
@@ -392,7 +408,7 @@ class MenuMixin:
         # button.
         for name, _files in list_installed_fonts():
             display = family_display_name(name, self.lang)
-            checked_label = f"✓ {display}" if name == self.font_family else display
+            checked_label = self._checked_label(display, name == self.font_family)
             font_menu.add_command(label=checked_label,
                                   command=lambda n=name: self.select_font_family(n))
         menu.add_cascade(label=self.t("font_family"), menu=font_menu)
@@ -408,6 +424,29 @@ class MenuMixin:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
             menu.grab_release()
+
+    def _history_today_summary(self, all_events):
+        # "Today" stats are computed over the full (MAX_ENTRIES-capped) log,
+        # not the HISTORY_LIST_MAX_EVENTS-newest slice used for the listbox
+        # -- otherwise a busy day with more events than that across all
+        # talents would silently drop older same-day entries from the count.
+        today = time.strftime("%Y-%m-%d")
+        today_starts = [event for event in all_events if event.get("event") == "start"
+                        and time.strftime("%Y-%m-%d", time.localtime(event.get("ts", 0))) == today]
+        # Keyed by (production_id, name), not name alone -- talent names are
+        # only guaranteed unique within one production's own JSON file, and
+        # a variant with several enabled productions (see
+        # has_multiple_productions()) can otherwise merge two different
+        # talents' counts together.
+        counts = {}
+        for event in today_starts:
+            key = (event.get("production_id"), event.get("name", "?"))
+            counts[key] = counts.get(key, 0) + 1
+        top = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)[:5]
+        summary = self.t("stream_history_today", count=len(today_starts))
+        if top:
+            summary += "  " + " / ".join(f"{name} x{count}" for (_, name), count in top)
+        return summary
 
     def open_history_window(self):
         # A plain (OS-decorated) Toplevel rather than this file's usual
@@ -426,34 +465,15 @@ class MenuMixin:
         win = tk.Toplevel(self.root)
         self.history_win = win
         win.title(self.t("stream_history"))
-        win.geometry("560x420")
+        win.geometry(HISTORY_WINDOW_SIZE)
         win.configure(bg=panel_hex)
 
-        # "Today" stats are computed over the full (MAX_ENTRIES-capped) log,
-        # not the 300-newest slice used for the listbox below -- otherwise a
-        # busy day with >300 events across all talents would silently drop
-        # older same-day entries from the count.
         all_events = stream_log.load_events()
-        events = all_events[:300]
-        today = time.strftime("%Y-%m-%d")
-        today_starts = [event for event in all_events if event.get("event") == "start"
-                        and time.strftime("%Y-%m-%d", time.localtime(event.get("ts", 0))) == today]
-        # Keyed by (production_id, name), not name alone -- talent names are
-        # only guaranteed unique within one production's own JSON file, and
-        # a variant with several enabled productions (see
-        # has_multiple_productions()) can otherwise merge two different
-        # talents' counts together.
-        counts = {}
-        for event in today_starts:
-            key = (event.get("production_id"), event.get("name", "?"))
-            counts[key] = counts.get(key, 0) + 1
-        top = sorted(counts.items(), key=lambda pair: pair[1], reverse=True)[:5]
-        summary = self.t("stream_history_today", count=len(today_starts))
-        if top:
-            summary += "  " + " / ".join(f"{name} x{count}" for (_, name), count in top)
+        events = all_events[:HISTORY_LIST_MAX_EVENTS]
+        summary = self._history_today_summary(all_events)
 
         tk.Label(win, text=summary, bg=panel_hex, fg=text_hex, anchor="w", justify="left",
-                wraplength=540, font=("Yu Gothic UI", 9, "bold")).pack(fill="x", padx=10, pady=(10, 4))
+                wraplength=540, font=FONT_UI_SMALL_BOLD).pack(fill="x", padx=10, pady=(10, 4))
 
         list_frame = tk.Frame(win, bg=panel_hex)
         list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 6))
@@ -461,7 +481,7 @@ class MenuMixin:
         scrollbar.pack(side="right", fill="y")
         listbox = tk.Listbox(
             list_frame, bg=panel_hex, fg=text_hex, activestyle="none",
-            highlightthickness=0, borderwidth=0, font=("Yu Gothic UI", 9),
+            highlightthickness=0, borderwidth=0, font=FONT_UI_SMALL,
             yscrollcommand=scrollbar.set,
         )
         listbox.pack(side="left", fill="both", expand=True)
@@ -496,9 +516,9 @@ class MenuMixin:
         listbox.bind("<Double-Button-1>", open_selected_url)
 
         tk.Label(win, text=self.t("stream_history_hint"), bg=panel_hex, fg=muted_hex,
-                font=("Yu Gothic UI", 8)).pack(anchor="w", padx=10, pady=(0, 4))
+                font=FONT_UI_TINY).pack(anchor="w", padx=10, pady=(0, 4))
 
         close_btn = tk.Label(win, text=self.t("close"), bg=panel_hex, fg=muted_hex,
-                             font=("Yu Gothic UI", 9, "underline"), cursor="hand2")
+                             font=FONT_UI_SMALL_UNDERLINE, cursor="hand2")
         close_btn.pack(anchor="e", padx=10, pady=(0, 10))
         close_btn.bind("<Button-1>", lambda event: self._close_popup("history_win"))

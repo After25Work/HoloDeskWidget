@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw, ImageTk
 from . import appconfig
 from .config import MIN_BACKGROUND_DARKNESS, TEXT_SCALE_MIN, TEXT_SCALE_MAX
 from .fonts import emoji_font, font
+from .grid_layout import PANEL_INSET
 from .strings import STRINGS, english_name
 from .theme import KEY_COLOR, MIN_LABEL_SIZE, THEME_PALETTE, THEMES, production_band_color
 
@@ -30,6 +31,16 @@ _EMOJI_SPLIT_RE = re.compile(
 
 
 class RenderingMixin:
+    @staticmethod
+    def talent_bullet_and_display_name(name, slug, state, lang):
+        # Shared by render()'s talent loop and widget.py's
+        # _visible_talent_labels() (used by compute_grid() to measure the
+        # widest visible label) so the two can never draw/measure a
+        # different bullet+name than what actually ends up on screen.
+        bullet = "● " if state == "live" else "! " if state == "error" else "• "
+        display_name = name if lang == "ja" else english_name(slug)
+        return bullet, display_name
+
     def _draw_toggle_button(self, draw, colors, accent, rect, label, active):
         fill = accent if active else self.tint(colors["neutral_btn"]) + (255,)
         text = self.text_color((24, 24, 31)) if active else self.text_color(colors["text"])
@@ -46,9 +57,43 @@ class RenderingMixin:
         draw = ImageDraw.Draw(image)
         accent = self.accent_color()
         btn = self.top_button_rects()
-        draw.rounded_rectangle((20, 20, self.width - 20, self.height - 20), 22,
-                               fill=self.tint(colors["panel"][:3]) + (colors["panel"][3],),
-                               outline=colors["outline"], width=1)
+        self._draw_top_bar(draw, colors, accent, btn)
+        self._draw_tabs(draw, colors, accent)
+        # Read once up front, not per access below -- for the "All" tab
+        # (active_production == ALL_PRODUCTION_ID) each of these properties
+        # re-merges every visible production's dict from scratch (see
+        # _merge_all_slots()), so repeating self.targets/self.states/
+        # self.live_titles per talent row turned this render pass into an
+        # O(N^2) one across a few hundred talents, on every ~60ms ticker tick.
+        targets = self.targets
+        states = self.states
+        live_titles = self.live_titles if self.live_only else {}
+        self._draw_status_and_sliders(draw, colors, targets, states)
+        grid_layout, row_height, pending_tickers = self._draw_grid_rows(
+            draw, colors, targets, states, live_titles)
+        self._update_and_draw_tickers(image, colors, pending_tickers)
+        self._draw_footer(draw, colors)
+        if self.focus_index is not None:
+            # Reuse this render()'s own grid_layout/row_height/targets
+            # (computed above) instead of letting focusable_items() recompute
+            # the grid -- and re-merge self.targets -- from scratch, see the
+            # note on those parameters in focusable_items(). Matters most
+            # here: this runs on every ~60ms ticker tick for as long as a
+            # focus ring stays visible.
+            items = self.focusable_items(grid_layout, row_height, targets)
+            if 0 <= self.focus_index < len(items):
+                fx0, fy0, fx1, fy1 = items[self.focus_index]["rect"]
+                draw.rounded_rectangle((fx0 - 3, fy0 - 3, fx1 + 3, fy1 + 3), 6,
+                                       outline=accent, width=2)
+            else:
+                self.focus_index = None
+        self.apply_image(image)
+
+    def _draw_top_bar(self, draw, colors, accent, btn):
+        draw.rounded_rectangle(
+            (PANEL_INSET, PANEL_INSET, self.width - PANEL_INSET, self.height - PANEL_INSET), 22,
+            fill=self.tint(colors["panel"][:3]) + (colors["panel"][3],),
+            outline=colors["outline"], width=1)
         if self.has_multiple_productions():
             # Only a single compact line fits above the tab strip below (see
             # layout.TABS_TOP) -- the app's own name, not a translatable
@@ -61,21 +106,6 @@ class RenderingMixin:
             draw.text((38, 36), appconfig.title(self.lang), font=font(18, True),
                       fill=self.text_color(colors["text"]))
             draw.text((38, 59), "LIVE STATUS", font=font(14, True), fill=self.text_color(colors["text"]))
-        tabs = self.production_tabs()
-        for tab in tabs:
-            rect = (tab["x"], tab["y"], tab["x"] + tab["w"], tab["y"] + tab["h"])
-            active = tab["id"] == self.active_production
-            tab_fill = accent if active else self.tint(colors["neutral_btn"]) + (255,)
-            tab_text = self.text_color((24, 24, 31)) if active else self.text_color(colors["text"])
-            draw.rounded_rectangle(rect, 7, fill=tab_fill)
-            fitted_label, tab_font = self._fit_label(tab["label"], 12, 8,
-                                                     tab["w"] - 10, bold=active)
-            self.draw_centered(draw, rect, fitted_label, tab_font, tab_text)
-            self.row_info[("tab", tab["id"])] = {
-                "rect": rect, "clickable": True,
-                "tooltip": tab["label"] if fitted_label != tab["label"] else None,
-                "copy_name": None, "copy_title": None,
-            }
         close_rect_btn = btn["close"]
         draw.rounded_rectangle(close_rect_btn, 8, fill=self.tint(colors["neutral_btn"]) + (255,))
         self.draw_centered(draw, close_rect_btn, "×", font(18, True), self.text_color(colors["text"]))
@@ -93,15 +123,25 @@ class RenderingMixin:
         if self.has_multiple_productions():
             self._draw_toggle_button(draw, colors, accent, btn["productions"],
                                       self.t("productions_button"), self.productions_win is not None)
-        # Read once up front, not per access below -- for the "All" tab
-        # (active_production == ALL_PRODUCTION_ID) each of these properties
-        # re-merges every visible production's dict from scratch (see
-        # _merge_all_slots()), so repeating self.targets/self.states/
-        # self.live_titles per talent row turned this render pass into an
-        # O(N^2) one across a few hundred talents, on every ~60ms ticker tick.
-        targets = self.targets
-        states = self.states
-        live_titles = self.live_titles if self.live_only else {}
+
+    def _draw_tabs(self, draw, colors, accent):
+        tabs = self.production_tabs()
+        for tab in tabs:
+            rect = (tab["x"], tab["y"], tab["x"] + tab["w"], tab["y"] + tab["h"])
+            active = tab["id"] == self.active_production
+            tab_fill = accent if active else self.tint(colors["neutral_btn"]) + (255,)
+            tab_text = self.text_color((24, 24, 31)) if active else self.text_color(colors["text"])
+            draw.rounded_rectangle(rect, 7, fill=tab_fill)
+            fitted_label, tab_font = self._fit_label(tab["label"], 12, 8,
+                                                     tab["w"] - 10, bold=active)
+            self.draw_centered(draw, rect, fitted_label, tab_font, tab_text)
+            self.row_info[("tab", tab["id"])] = {
+                "rect": rect, "clickable": True,
+                "tooltip": tab["label"] if fitted_label != tab["label"] else None,
+                "copy_name": None, "copy_title": None,
+            }
+
+    def _draw_status_and_sliders(self, draw, colors, targets, states):
         live_count = sum(state == "live" for state in states.values())
         status_top, status_bottom = self.status_bar_top(), self.status_bar_bottom()
         draw.rounded_rectangle((38, status_top, self.width - 38, status_bottom), 8,
@@ -143,9 +183,11 @@ class RenderingMixin:
         txt = sliders["text"]
         self.draw_slider(draw, txt["x"], txt["y"], self.t("text_slider"), self.text_scale * 100,
                          text_fraction, txt["track_start"], txt["track_end"], colors)
+
+    def _draw_grid_rows(self, draw, colors, targets, states, live_titles):
         # No scroll support: instead of dropping rows that don't fit, compute_grid()
         # shrinks row/divider height and font size uniformly so everything is shown.
-        # targets/states were already merged just above for the status bar/talent
+        # targets/states were already merged in render() for the status bar/talent
         # loop -- passed straight through so compute_grid() doesn't re-merge them
         # a second time on the "All" tab (see the note in compute_grid() itself).
         grid_layout, row_height, divider_height, grid_scale = self.compute_grid(targets, states)
@@ -236,8 +278,7 @@ class RenderingMixin:
             color = (colors["text"] if self.live_only and state == "live"
                      else colors["live"] if state == "live"
                      else colors["error"] if state == "error" else colors["muted"])
-            bullet = "● " if state == "live" else "! " if state == "error" else "• "
-            display_name = name if self.lang == "ja" else english_name(slug)
+            bullet, display_name = self.talent_bullet_and_display_name(name, slug, state, self.lang)
             label = bullet + display_name
             # In the live-only view every row is one talent wide, so the name
             # only needs a modest fixed-width lane — the rest of the row goes
@@ -357,6 +398,9 @@ class RenderingMixin:
                 ticker_w = item["w"] - label_area_w - ticker_gap
                 ticker_font = font(max(2, round(label_font.size * 0.85)), False)
                 pending_tickers.append((name, ticker_x, y, ticker_w, row_height, title, ticker_font))
+        return grid_layout, row_height, pending_tickers
+
+    def _update_and_draw_tickers(self, image, colors, pending_tickers):
         if pending_tickers:
             # All rows share one clock (ticker_progress) so every ticker on
             # screen starts moving at the same instant, from its head. A row
@@ -422,6 +466,8 @@ class RenderingMixin:
             self.ticker_progress = 0.0
             self.ticker_pause_until = 0.0
             self.ticker_last_tick = time.time()
+
+    def _draw_footer(self, draw, colors):
         updated_text = (self.t("updated", time=self.last_updated) if self.last_updated
                         else self.t("updated_none"))
         updated_font = font(10, True)
@@ -442,21 +488,6 @@ class RenderingMixin:
         self.draw_centered(draw, refresh_rect, refresh_label, font(13, True),
                            self.text_color(refresh_text_color))
         self.draw_resize_grip(draw, colors)
-        if self.focus_index is not None:
-            # Reuse this render()'s own grid_layout/row_height/targets
-            # (computed above) instead of letting focusable_items() recompute
-            # the grid -- and re-merge self.targets -- from scratch, see the
-            # note on those parameters in focusable_items(). Matters most
-            # here: this runs on every ~60ms ticker tick for as long as a
-            # focus ring stays visible.
-            items = self.focusable_items(grid_layout, row_height, targets)
-            if 0 <= self.focus_index < len(items):
-                fx0, fy0, fx1, fy1 = items[self.focus_index]["rect"]
-                draw.rounded_rectangle((fx0 - 3, fy0 - 3, fx1 + 3, fy1 + 3), 6,
-                                       outline=accent, width=2)
-            else:
-                self.focus_index = None
-        self.apply_image(image)
 
     def t(self, key, **kwargs):
         text = STRINGS[self.lang][key]

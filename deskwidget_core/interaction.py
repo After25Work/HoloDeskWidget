@@ -6,6 +6,7 @@ button/menu/refresh action was hit.
 import tkinter as tk
 
 from .config import (
+    FONT_UI_SMALL,
     MAX_HEIGHT,
     MAX_WIDTH,
     MIN_BACKGROUND_DARKNESS,
@@ -15,6 +16,19 @@ from .config import (
     TEXT_SCALE_MAX,
     TEXT_SCALE_MIN,
 )
+
+# Pointer movement (px) below which a press+release counts as a click rather
+# than a drag that happened to end near a slider.
+_DRAG_CLICK_THRESHOLD = 5
+# Vertical band (px, relative to grid_top()/self.height) a click has to land
+# in to be treated as a grid-row hit rather than the status bar above/below it.
+_GRID_HIT_TOP_MARGIN = 5
+_GRID_HIT_BOTTOM_MARGIN = 85
+_TOOLTIP_DELAY_MS = 450
+_TOOLTIP_OFFSET_X = 16
+_TOOLTIP_OFFSET_Y = 18
+# Fraction of the slider's full range each keyboard Left/Right press moves.
+_SLIDER_KEY_STEP = 0.05
 
 
 class InteractionMixin:
@@ -39,6 +53,13 @@ class InteractionMixin:
         self.surface.bind("<Right>", lambda event: self.adjust_focus_slider(1))
         self.surface.bind("<Escape>", self.clear_focus)
 
+    def _hit_button_at(self, x, y):
+        return next((key for key, rect in self.top_button_rects().items()
+                     if self._in_rect(x, y, rect)), None)
+
+    def _apply_background_alpha(self):
+        self.root.attributes("-alpha", max(1.0 - self.background_alpha, MIN_WINDOW_ALPHA))
+
     def drag_start(self, event):
         # Snapshot, before focus_set() below steals focus, whether this press
         # landed on the button whose own popup is currently open. focus_set()
@@ -50,8 +71,7 @@ class InteractionMixin:
         # making a second press on the button look like it does nothing.
         menu_wins = {"font": self.font_win, "color": self.palette_win,
                      "productions": self.productions_win}
-        hit_key = next((key for key, rect in self.top_button_rects().items()
-                        if self._in_rect(event.x, event.y, rect)), None)
+        hit_key = self._hit_button_at(event.x, event.y)
         self.menu_reopen_guard = hit_key if menu_wins.get(hit_key) is not None else None
         self.surface.focus_set()
         self._hide_tooltip()
@@ -144,12 +164,11 @@ class InteractionMixin:
         if self.drag_origin is not None:
             sx, sy, x, y = self.drag_origin
             self.drag_origin = None
-            if abs(event.x_root - sx) > 5 or abs(event.y_root - sy) > 5:
+            if (abs(event.x_root - sx) > _DRAG_CLICK_THRESHOLD
+                    or abs(event.y_root - sy) > _DRAG_CLICK_THRESHOLD):
                 self.slider_drag = False
                 return
-        btn = self.top_button_rects()
-        hit_button = next((key for key, rect in btn.items()
-                           if self._in_rect(event.x, event.y, rect)), None)
+        hit_button = self._hit_button_at(event.x, event.y)
         hit_tab = next((tab for tab in self.production_tabs()
                         if self._in_rect(event.x, event.y,
                                          (tab["x"], tab["y"], tab["x"] + tab["w"], tab["y"] + tab["h"]))),
@@ -166,7 +185,7 @@ class InteractionMixin:
             self.switch_production(hit_tab["id"])
         elif self._in_rect(event.x, event.y, self.refresh_btn_rect()):
             self.refresh()
-        elif self.grid_top() - 5 <= event.y < self.height - 85:
+        elif self.grid_top() - _GRID_HIT_TOP_MARGIN <= event.y < self.height - _GRID_HIT_BOTTOM_MARGIN:
             grid_layout, row_height, _, _ = self.compute_grid()
             for item in grid_layout:
                 if (item["type"] == "talent"
@@ -214,11 +233,11 @@ class InteractionMixin:
             return "break"
         if item["slider_key"] == "background":
             darkness = 1.0 - self.background_alpha
-            darkness = max(MIN_BACKGROUND_DARKNESS, min(1.0, darkness + direction * 0.05))
+            darkness = max(MIN_BACKGROUND_DARKNESS, min(1.0, darkness + direction * _SLIDER_KEY_STEP))
             self.background_alpha = 1.0 - darkness
-            self.root.attributes("-alpha", max(1.0 - self.background_alpha, MIN_WINDOW_ALPHA))
+            self._apply_background_alpha()
         else:
-            step = (TEXT_SCALE_MAX - TEXT_SCALE_MIN) * 0.05
+            step = (TEXT_SCALE_MAX - TEXT_SCALE_MIN) * _SLIDER_KEY_STEP
             self.text_scale = max(TEXT_SCALE_MIN, min(TEXT_SCALE_MAX, self.text_scale + direction * step))
         self.request_render()
         return "break"
@@ -262,7 +281,8 @@ class InteractionMixin:
             return
         self._hide_tooltip()
         self._tooltip_key = row_key
-        self._tooltip_after = self.root.after(450, lambda: self._show_tooltip(text, root_x, root_y))
+        self._tooltip_after = self.root.after(
+            _TOOLTIP_DELAY_MS, lambda: self._show_tooltip(text, root_x, root_y))
 
     def _show_tooltip(self, text, root_x, root_y):
         self._tooltip_after = None
@@ -270,11 +290,11 @@ class InteractionMixin:
         win = tk.Toplevel(self.root)
         win.overrideredirect(True)
         win.attributes("-topmost", True)
-        label = tk.Label(win, text=text, justify="left", font=("Yu Gothic UI", 9), padx=8, pady=4,
+        label = tk.Label(win, text=text, justify="left", font=FONT_UI_SMALL, padx=8, pady=4,
                          relief="solid", borderwidth=1,
                          bg=self._hex(self.tint(colors["neutral_btn"])), fg=self._hex(colors["text"]))
         label.pack()
-        win.geometry(f"+{root_x + 16}+{root_y + 18}")
+        win.geometry(f"+{root_x + _TOOLTIP_OFFSET_X}+{root_y + _TOOLTIP_OFFSET_Y}")
         self.tooltip_win = win
 
     def _hide_tooltip(self):
@@ -307,7 +327,7 @@ class InteractionMixin:
         fraction = max(0.0, min(1.0, (x - bg["track_start"]) / (bg["track_end"] - bg["track_start"])))
         background_darkness = MIN_BACKGROUND_DARKNESS + fraction * (1.0 - MIN_BACKGROUND_DARKNESS)
         self.background_alpha = 1.0 - background_darkness
-        self.root.attributes("-alpha", max(1.0 - self.background_alpha, MIN_WINDOW_ALPHA))
+        self._apply_background_alpha()
         self.request_render()
 
     def set_text_scale_from_pointer(self, x):

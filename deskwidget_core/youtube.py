@@ -7,6 +7,15 @@ from urllib.request import Request, urlopen
 
 _HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+# hololivepro.com talent profile pages link both hololive's own umbrella
+# @hololive handle and each talent's own @handle -- excluded here so
+# resolve_channel_url() below picks the talent's individual channel instead.
+_HOLOLIVE_BRAND_HANDLE = "hololive"
+# hololive's own corporate/umbrella channel id, which can also appear on a
+# talent's profile page (e.g. in a "featured channels" shelf) -- excluded
+# for the same reason as the handle above.
+_HOLOLIVE_CORP_CHANNEL_ID = "UCJFZiqLMntJufDCHc6bQixg"
+
 
 def _open(url, timeout, data=None, extra_headers=None):
     request = Request(url, data=data, headers={**_HEADERS, **(extra_headers or {})})
@@ -38,12 +47,12 @@ def resolve_channel_url(slug):
     profile = _get(f"https://hololive.hololivepro.com/talents/{slug}/", 20)
     handles = [handle for handle in dict.fromkeys(re.findall(
         r"https?://(?:www\.)?youtube\.com/@([A-Za-z0-9_.-]+)", profile
-    )) if handle.lower() != "hololive"]
+    )) if handle.lower() != _HOLOLIVE_BRAND_HANDLE]
     if handles:
         return f"https://www.youtube.com/@{handles[0]}"
     channels = re.findall(r"https://www\.youtube\.com/channel/(UC[\w-]+)", profile)
     channels = [channel for channel in dict.fromkeys(channels)
-                if channel != "UCJFZiqLMntJufDCHc6bQixg"]
+                if channel != _HOLOLIVE_CORP_CHANNEL_ID]
     if not channels:
         raise ValueError(f"YouTube channel was not found for {slug}")
     return f"https://www.youtube.com/channel/{channels[0]}"
@@ -251,6 +260,21 @@ def _resolve_channel_id(channel_url, timeout=_RESOLVE_TIMEOUT):
         return channel_id
 
 
+def _is_live_badged(overlays):
+    # _safe_get() at every step (see its definition above) so a null
+    # anywhere in this chain just makes this False for that badge/overlay,
+    # instead of raising out of the `for item in items` loop in
+    # _parse_live_tab() below and into its broad except — which would abort
+    # scanning the rest of the items entirely and misreport the channel as
+    # not live even when a later item is the actual live broadcast.
+    return any(
+        _safe_get(_safe_get(badge, "thumbnailBadgeViewModel"), "badgeStyle")
+        == "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE"
+        for overlay in overlays
+        for badge in _safe_get(_safe_get(overlay, "thumbnailBottomOverlayViewModel"), "badges") or []
+    )
+
+
 def _parse_live_tab(data):
     try:
         tabs = data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"]
@@ -277,20 +301,7 @@ def _parse_live_tab(data):
             content_image = _safe_get(lockup, "contentImage")
             thumbnail_view_model = _safe_get(content_image, "thumbnailViewModel")
             overlays = _safe_get(thumbnail_view_model, "overlays") or []
-            # _safe_get() at every step (see its definition above) so a null
-            # anywhere in this chain just makes is_live False for that
-            # badge/overlay, instead of raising out of the whole
-            # `for item in items` loop below and into the broad except —
-            # which would abort scanning the rest of the items entirely and
-            # misreport the channel as not live even when a later item is
-            # the actual live broadcast.
-            is_live = any(
-                _safe_get(_safe_get(badge, "thumbnailBadgeViewModel"), "badgeStyle")
-                == "THUMBNAIL_OVERLAY_BADGE_STYLE_LIVE"
-                for overlay in overlays
-                for badge in _safe_get(_safe_get(overlay, "thumbnailBottomOverlayViewModel"), "badges") or []
-            )
-            if not is_live:
+            if not _is_live_badged(overlays):
                 continue
             content_id = lockup.get("contentId")
             if not content_id:

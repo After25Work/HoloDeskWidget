@@ -26,6 +26,15 @@ MIN_BACKGROUND_DARKNESS = 0.3
 TEXT_SCALE_MIN = 0.8
 TEXT_SCALE_MAX = 1.0
 
+# UI chrome font, shared by menus.py's popups/context menu and
+# interaction.py's tooltip so a future font/size tweak has one place to
+# change instead of ~15 scattered literal tuples.
+FONT_UI_TINY = ("Yu Gothic UI", 8)
+FONT_UI_SMALL = ("Yu Gothic UI", 9)
+FONT_UI_SMALL_BOLD = ("Yu Gothic UI", 9, "bold")
+FONT_UI_SMALL_UNDERLINE = ("Yu Gothic UI", 9, "underline")
+FONT_UI_REGULAR = ("Yu Gothic UI", 10)
+
 DEFAULT_SETTINGS = {
     "x": 40,
     "y": 40,
@@ -61,6 +70,10 @@ def _coerce(value, default, cast):
         return default
 
 
+def _coerce_clamped(value, default, cast, lo, hi):
+    return max(lo, min(hi, _coerce(value, default, cast)))
+
+
 def _coerce_bool(value, default):
     # isinstance, not _coerce(value, default, bool): bool() coerces any
     # truthy non-bool (e.g. a hand-edited string "false") to True instead of
@@ -82,16 +95,17 @@ def load_settings():
     # string) that would otherwise raise inside min()/max() below.
     settings["x"] = _coerce(settings["x"], DEFAULT_SETTINGS["x"], int)
     settings["y"] = _coerce(settings["y"], DEFAULT_SETTINGS["y"], int)
-    settings["width"] = max(MIN_WIDTH, min(MAX_WIDTH,
-        _coerce(settings["width"], DEFAULT_SETTINGS["width"], int)))
-    settings["height"] = max(MIN_HEIGHT, min(MAX_HEIGHT,
-        _coerce(settings["height"], DEFAULT_SETTINGS["height"], int)))
-    settings["background_alpha"] = max(0.0, min(1.0 - MIN_BACKGROUND_DARKNESS,
-        _coerce(settings["background_alpha"], DEFAULT_SETTINGS["background_alpha"], float)))
+    settings["width"] = _coerce_clamped(
+        settings["width"], DEFAULT_SETTINGS["width"], int, MIN_WIDTH, MAX_WIDTH)
+    settings["height"] = _coerce_clamped(
+        settings["height"], DEFAULT_SETTINGS["height"], int, MIN_HEIGHT, MAX_HEIGHT)
+    settings["background_alpha"] = _coerce_clamped(
+        settings["background_alpha"], DEFAULT_SETTINGS["background_alpha"], float,
+        0.0, 1.0 - MIN_BACKGROUND_DARKNESS)
     settings["lang"] = settings["lang"] if settings["lang"] in STRINGS else "ja"
     settings["topmost"] = _coerce_bool(settings["topmost"], DEFAULT_SETTINGS["topmost"])
-    settings["theme_index"] = max(0, min(len(THEME_PALETTE) - 1,
-        _coerce(settings["theme_index"], DEFAULT_SETTINGS["theme_index"], int)))
+    settings["theme_index"] = _coerce_clamped(
+        settings["theme_index"], DEFAULT_SETTINGS["theme_index"], int, 0, len(THEME_PALETTE) - 1)
     # Not checked against list_installed_fonts() here: that's a full
     # Fonts-directory scan (every file loaded via Pillow/FreeType, plus a
     # GDI glyph-coverage probe per family -- can easily be 200+ fonts), and
@@ -104,8 +118,9 @@ def load_settings():
     settings["font_family"] = _coerce(settings["font_family"], DEFAULT_SETTINGS["font_family"], str)
     settings["dark_mode"] = _coerce_bool(settings["dark_mode"], DEFAULT_SETTINGS["dark_mode"])
     settings["live_only"] = _coerce_bool(settings["live_only"], DEFAULT_SETTINGS["live_only"])
-    settings["text_scale"] = max(TEXT_SCALE_MIN, min(TEXT_SCALE_MAX,
-        _coerce(settings["text_scale"], DEFAULT_SETTINGS["text_scale"], float)))
+    settings["text_scale"] = _coerce_clamped(
+        settings["text_scale"], DEFAULT_SETTINGS["text_scale"], float,
+        TEXT_SCALE_MIN, TEXT_SCALE_MAX)
     settings["active_production"] = _coerce(
         settings["active_production"], DEFAULT_SETTINGS["active_production"], str)
     raw_enabled = settings["enabled_productions"]

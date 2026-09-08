@@ -121,6 +121,13 @@ def _supports_japanese(family_name):
         gdi32.DeleteDC(hdc)
 
 
+def _pick(styles, bold):
+    """Returns the entry for `bold`, falling back to the opposite weight if
+    this family has no face at the requested one (e.g. a family that only
+    ships Regular still needs to answer a bold lookup with something)."""
+    return styles.get(bold, styles.get(not bold))
+
+
 def _style_rank(style, is_bold):
     preference = _BOLD_STYLE_PREFERENCE if is_bold else _REGULAR_STYLE_PREFERENCE
     try:
@@ -196,8 +203,8 @@ def list_installed_fonts():
         if not _supports_japanese(family):
             continue
         styles = families[family]
-        regular = styles.get(False, styles.get(True))[1]
-        bold = styles.get(True, styles.get(False))[1]
+        regular = _pick(styles, False)[1]
+        bold = _pick(styles, True)[1]
         result.append((family, {True: bold, False: regular}))
     return result
 
@@ -259,7 +266,7 @@ def _display_names_by_family():
     scanned = _scan_installed_fonts()
     result = {}
     for family, _files in list_installed_fonts():
-        entry = scanned[family].get(False, scanned[family].get(True))
+        entry = _pick(scanned[family], False)
         _rank, path, index = entry
         names = _read_family_names(path, index)
         en = names.get(_LANG_ID_EN_US)
@@ -313,7 +320,7 @@ def _font_paths(bold):
     seen = set()
     selected = _installed_fonts_by_name().get(_current_family_name)
     if selected is not None:
-        path = selected.get(bold, selected.get(not bold))
+        path = _pick(selected, bold)
         if path is not None:
             ordered_paths.append(path)
             seen.add(path)

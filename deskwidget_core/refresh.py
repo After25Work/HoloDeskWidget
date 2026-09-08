@@ -30,12 +30,23 @@ _UNSUPPORTED_DECORATION_RE = re.compile(
     "\U00001400-\U0000167F\U000018B0-\U000018FF]+"
 )
 
+# Re-opening the same target link within this window of the last open is
+# treated as a duplicate click rather than two intentional opens.
+REOPEN_DEBOUNCE_SECONDS = 0.5
+# Only this many talent checks run concurrently at once, even when a
+# refresh cycle queues hundreds of tasks (the "All" tab across every
+# production) -- see refresh_worker()'s own note on why a fixed-size pool
+# drains a queue instead of one thread per talent.
+MAX_REFRESH_WORKERS = 12
+# How often refresh_complete() reschedules the next automatic refresh.
+REFRESH_INTERVAL_MS = 60_000
+
 
 class RefreshMixin:
     def open_target(self, target):
         name, _, url, _ = target
         now = time.monotonic()
-        if self.last_opened[0] == name and now - self.last_opened[1] < 0.5:
+        if self.last_opened[0] == name and now - self.last_opened[1] < REOPEN_DEBOUNCE_SECONDS:
             return
         self.last_opened = (name, now)
         if self.states.get(name) == "live" and self.live_urls.get(name):
@@ -116,7 +127,7 @@ class RefreshMixin:
             # 20s bound — would keep the whole process — and the
             # single-instance mutex it holds — alive well after the window
             # closes. Daemon threads are simply abandoned on exit instead.
-            pool_size = min(12, len(tasks))
+            pool_size = min(MAX_REFRESH_WORKERS, len(tasks))
             workers = [threading.Thread(target=drain_queue, daemon=True) for _ in range(pool_size)]
             for worker in workers:
                 worker.start()
@@ -137,7 +148,7 @@ class RefreshMixin:
         if prod_id == self.active_production:
             self.last_updated = time.strftime("%H:%M:%S")
             self.render()
-            self.root.after(60_000, self.refresh)
+            self.root.after(REFRESH_INTERVAL_MS, self.refresh)
         else:
             # The user switched tabs while this (now-stale) production's
             # refresh was still in flight — kick an immediate refresh for
@@ -146,21 +157,98 @@ class RefreshMixin:
             # next periodic tick, so this doesn't create a second loop.
             self.refresh()
 
+    @staticmethod
+    def _resolve_channel_url(slot, auto_resolve, name, slug, target):
+        """Ensures slot['channel_urls'][name] is populated and returns it.
+        `auto_resolve` is the owning production's manifest field: only
+        "hololivepro" scrapes hololive's official talent pages for a
+        channel URL; every other production (including custom) uses
+        `target` (channel_url from its JSON) as-is and never attempts a
+        hololive-site re-resolve."""
+        channel_urls = slot["channel_urls"]
+        if name not in channel_urls:
+            if auto_resolve == "hololivepro":
+                try:
+                    resolved = youtube.resolve_channel_url(slug)
+                except (HTTPError, OSError, UnicodeError, ValueError):
+                    resolved = target
+            else:
+                resolved = target
+            # Guards against _merge_all_slots() reading/merging this dict on
+            # the Tk main thread at the same time (see the note by "lock" in
+            # _production_slot()).
+            with slot["lock"]:
+                channel_urls[name] = resolved
+        return channel_urls[name]
+
+    @staticmethod
+    def _fetch_with_stale_retry(slot, auto_resolve, name, slug, target):
+        """Fetches live info for `target`, re-resolving and retrying once on
+        a stale-channel error (see youtube.is_stale_channel_error). Returns
+        (video_id, title) on success, or None if the retry itself hit a
+        stale-channel error or the re-resolve failed -- both of which mean
+        "keep last-known state, don't escalate to a logged error every
+        cycle" to the caller. Propagates any other exception."""
+        try:
+            return youtube.fetch_live_info(target)
+        except (HTTPError, youtube.ChannelNotFoundError) as error:
+            # A ChannelNotFoundError (fetch_live_info() raises this when
+            # the browse API answers 200 OK with an "alerts" ERROR banner
+            # — a stale/bad browseId) and a genuine transport
+            # HTTPError(404) mean the same thing to this retry: re-resolve
+            # the channel and try once more. Any other HTTPError code is
+            # a real failure, not one this retry can do anything about.
+            # Only hololive has a known site to re-resolve against — any
+            # other production just keeps last-known state on a stale
+            # channel instead of scraping the wrong site.
+            if not youtube.is_stale_channel_error(error) or auto_resolve != "hololivepro":
+                raise
+            try:
+                target = youtube.resolve_channel_url(slug)
+            except (HTTPError, OSError, UnicodeError, ValueError):
+                # A 404/ChannelNotFoundError can be a transient YouTube-side
+                # hiccup, and some talents' hololivepro profile page no
+                # longer scrapes a channel link (e.g. after graduation) so
+                # this retry can fail every single cycle.
+                return None
+            targets, channel_urls = slot["targets"], slot["channel_urls"]
+            with slot["lock"]:
+                channel_urls[name] = target
+                for index, (target_name, target_slug, _, unit) in enumerate(targets):
+                    if target_name == name:
+                        targets[index] = (target_name, target_slug, target, unit)
+                        break
+            try:
+                # attempts=1: this is already the retry after a resolve
+                # + fetch round-trip, so skip fetch_live_info()'s own
+                # internal retry-on-transient-error loop here rather than
+                # letting this one talent's worker thread hold one of
+                # refresh_worker()'s MAX_REFRESH_WORKERS concurrent slots for
+                # yet another full retry cycle on top of everything already
+                # tried.
+                return youtube.fetch_live_info(target, attempts=1)
+            except (HTTPError, youtube.ChannelNotFoundError) as error:
+                if not youtube.is_stale_channel_error(error):
+                    raise
+                # Same reasoning as the resolve_channel_url failure just
+                # above: a freshly re-resolved channel that still
+                # 404s/doesn't exist gets the same "keep last-known state"
+                # treatment rather than falling through to the outer except.
+                return None
+
+    @staticmethod
+    def _clear_live_state(slot, name, state):
+        with slot["lock"]:
+            slot["live_urls"].pop(name, None)
+            slot["live_titles"].pop(name, None)
+            slot["states"][name] = state
+
     def check_one(self, prod_id, slot, auto_resolve, name, slug, target):
         # Operates on the explicit `slot` dict (self.production_data[prod_id])
         # rather than the self.targets/self.states/etc. properties, which
         # always reflect whichever production is active_production *right
-        # now* — see the note above those properties. `auto_resolve` is the
-        # owning production's manifest field: only "hololivepro" scrapes
-        # hololive's official talent pages for a channel URL; every other
-        # production (including custom) uses `target` (channel_url from its
-        # JSON) as-is and never attempts a hololive-site re-resolve.
-        targets, states, channel_urls, live_urls, live_titles = (
-            slot["targets"], slot["states"], slot["channel_urls"],
-            slot["live_urls"], slot["live_titles"])
-        # Guards every write below into the dicts above against
-        # _merge_all_slots() reading/merging them on the Tk main thread at
-        # the same time (see the note by "lock" in _production_slot()).
+        # now* — see the note above those properties.
+        states, live_urls, live_titles = slot["states"], slot["live_urls"], slot["live_titles"]
         lock = slot["lock"]
         # Snapshotted once up front: check_one() only ever lands on one of the
         # states[name] = ... assignments below per call, so this alone is
@@ -169,64 +257,11 @@ class RefreshMixin:
         # same state as before.
         previous_state = states.get(name)
         try:
-            if auto_resolve == "hololivepro" and name not in channel_urls:
-                try:
-                    resolved = youtube.resolve_channel_url(slug)
-                except (HTTPError, OSError, UnicodeError, ValueError):
-                    resolved = target
-                with lock:
-                    channel_urls[name] = resolved
-            elif name not in channel_urls:
-                with lock:
-                    channel_urls[name] = target
-            target = channel_urls[name]
-            try:
-                video_id, title = youtube.fetch_live_info(target)
-            except (HTTPError, youtube.ChannelNotFoundError) as error:
-                # A ChannelNotFoundError (fetch_live_info() raises this when
-                # the browse API answers 200 OK with an "alerts" ERROR banner
-                # — a stale/bad browseId) and a genuine transport
-                # HTTPError(404) mean the same thing to this retry: re-resolve
-                # the channel and try once more. Any other HTTPError code is
-                # a real failure, not one this retry can do anything about.
-                # Only hololive has a known site to re-resolve against — any
-                # other production just keeps last-known state on a stale
-                # channel instead of scraping the wrong site.
-                if not youtube.is_stale_channel_error(error) or auto_resolve != "hololivepro":
-                    raise
-                try:
-                    target = youtube.resolve_channel_url(slug)
-                except (HTTPError, OSError, UnicodeError, ValueError):
-                    # A 404/ChannelNotFoundError can be a transient YouTube-side
-                    # hiccup, and some talents' hololivepro profile page no
-                    # longer scrapes a channel link (e.g. after graduation) so
-                    # this retry can fail every single cycle. Keep last-known
-                    # state instead of escalating to "error" and re-logging the
-                    # same failure on every refresh forever.
-                    return
-                with lock:
-                    channel_urls[name] = target
-                    for index, (target_name, target_slug, _, unit) in enumerate(targets):
-                        if target_name == name:
-                            targets[index] = (target_name, target_slug, target, unit)
-                            break
-                try:
-                    # attempts=1: this is already the retry after a resolve
-                    # + fetch round-trip, so skip fetch_live_info()'s own
-                    # internal retry-on-transient-error loop here rather than
-                    # letting this one talent's worker thread hold one of
-                    # refresh_worker()'s 12 concurrent slots for yet another
-                    # full retry cycle on top of everything already tried.
-                    video_id, title = youtube.fetch_live_info(target, attempts=1)
-                except (HTTPError, youtube.ChannelNotFoundError) as error:
-                    if not youtube.is_stale_channel_error(error):
-                        raise
-                    # Same reasoning as the resolve_channel_url failure just
-                    # above: a freshly re-resolved channel that still
-                    # 404s/doesn't exist gets the same "keep last-known state,
-                    # don't escalate to a logged error every cycle" treatment
-                    # rather than falling through to the outer except below.
-                    return
+            target = self._resolve_channel_url(slot, auto_resolve, name, slug, target)
+            result = self._fetch_with_stale_retry(slot, auto_resolve, name, slug, target)
+            if result is None:
+                return
+            video_id, title = result
             if video_id:
                 # Set live_urls before states: open_target() reads states
                 # first, so this ordering keeps it from ever observing
@@ -250,17 +285,11 @@ class RefreshMixin:
                 self._log_state_transition(prod_id, name, previous_state, "live",
                                             live_titles.get(name), live_urls.get(name))
             else:
-                with lock:
-                    live_urls.pop(name, None)
-                    live_titles.pop(name, None)
-                    states[name] = "offline"
+                self._clear_live_state(slot, name, "offline")
                 self._log_state_transition(prod_id, name, previous_state, "offline")
         except (HTTPError, OSError, UnicodeError, ValueError,
                 youtube.ChannelNotFoundError) as error:
-            with lock:
-                states[name] = "error"
-                live_urls.pop(name, None)
-                live_titles.pop(name, None)
+            self._clear_live_state(slot, name, "error")
             log_error(name, error)
             self._log_state_transition(prod_id, name, previous_state, "error")
 

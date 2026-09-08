@@ -18,6 +18,14 @@ ALL_PRODUCTION = {"id": ALL_PRODUCTION_ID, "name": {"ja": "すべて", "en": "Al
 # session yet" without the two call sites silently drifting apart.
 UNOBSERVED_STATE = "unknown"
 
+_HOLOLIVE_FALLBACK = {
+    "id": "hololive",
+    "name": {"ja": "ホロライブ", "en": "hololive"},
+    "file": "hololive.json",
+    "auto_resolve": "hololivepro",
+}
+
+
 # Used only if productions/index.json is missing/corrupt/empty, so the
 # widget always has at least one production to show instead of an empty
 # tab bar and no talents at all. This module is shared by every variant, so
@@ -33,12 +41,7 @@ def _fallback_production():
     except OSError:
         files = []
     if "hololive.json" in files:
-        return {
-            "id": "hololive",
-            "name": {"ja": "ホロライブ", "en": "hololive"},
-            "file": "hololive.json",
-            "auto_resolve": "hololivepro",
-        }
+        return dict(_HOLOLIVE_FALLBACK)
     if files:
         filename = files[0]
         stem = Path(filename).stem
@@ -47,12 +50,7 @@ def _fallback_production():
     # so load_productions() always has one entry; load_targets() on it will
     # just come back empty since load_json() treats the missing file as a
     # missing-default case too.
-    return {
-        "id": "hololive",
-        "name": {"ja": "ホロライブ", "en": "hololive"},
-        "file": "hololive.json",
-        "auto_resolve": "hololivepro",
-    }
+    return dict(_HOLOLIVE_FALLBACK)
 
 
 def load_productions():
