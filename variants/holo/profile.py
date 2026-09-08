@@ -23,5 +23,13 @@ PROFILE = {
     "default_accent": (39, 199, 255),
     "variant_root": Path(__file__).resolve().parent,
     "title": {"ja": "ホロライブ", "en": "hololive"},
-    "min_width": _MIN_WIDTH_BEFORE_TRAY_BUTTON + button_row_delta("tray"),
+    # button_row_delta("productions") is reserved even though productions/
+    # index.json currently has a single entry (so widget.has_multiple_
+    # productions() is False and the button doesn't show today): whether it
+    # shows is decided at runtime from that JSON's entry count, not anything
+    # this static profile can rule out, so a second production added later
+    # (a pure data change) must not be able to make the button overlap the
+    # title text -- see VT's own profile.py, which bakes in the same room.
+    "min_width": (_MIN_WIDTH_BEFORE_TRAY_BUTTON + button_row_delta("tray")
+                  + button_row_delta("productions")),
 }

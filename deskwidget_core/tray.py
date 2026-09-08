@@ -322,7 +322,13 @@ class TrayIcon:
             return
         _user32.PostMessageW(self._hwnd, WM_TRAY_QUIT, 0, 0)
         self._thread.join(_SHUTDOWN_JOIN_SECONDS)
-        self._hwnd = None
+        # Only clear _hwnd once the pump thread has actually exited: _run()'s
+        # own finally block reads self._hwnd to DestroyWindow/UnregisterClassW
+        # on its way out, so nulling it here first (e.g. after the join times
+        # out on a stalled Win32 call) would make that cleanup silently fail
+        # against None and leak the window class instead.
+        if not self._thread.is_alive():
+            self._hwnd = None
 
     def _show_menu(self):
         items = self._menu_items_provider()

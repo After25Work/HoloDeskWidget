@@ -328,5 +328,8 @@ def resolve_watch_page_url(channel_url, timeout=5):
 
 
 def build_search_fallback_url(name):
-    return ("https://www.youtube.com/results?search_query="
-            + quote_plus(f"hololive {name}"))
+    # No production/agency name prefixed here -- this is shared by every
+    # production across both variants (see check_one()'s callers), not just
+    # Hololive's, and the talent's own name is normally distinctive enough
+    # on its own for a YouTube channel search.
+    return "https://www.youtube.com/results?search_query=" + quote_plus(name)

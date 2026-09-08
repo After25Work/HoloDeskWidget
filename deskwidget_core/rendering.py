@@ -176,13 +176,19 @@ class RenderingMixin:
         base_label_size = max(2, round(16 * label_scale))
         min_label_size = min(MIN_LABEL_SIZE, base_label_size)
         # Unlike the talent grid (which intentionally grows/shrinks per tab to
-        # fill the panel — see compute_grid()'s note), the clock time and the
-        # unit/category divider labels are scaled off text_scale alone, not
+        # fill the panel — see compute_grid()'s note), the clock time and its
+        # own category divider label are scaled off text_scale alone, not
         # grid_scale: grid_scale reflects how many rows the *current* tab's
-        # talent list needs, so tying these to it made the clock and unit
-        # text visibly change size when switching tabs even though neither
-        # one's own content changes.
-        divider_font = font(max(2, round(10 * self.text_scale)), True)
+        # talent list needs, so tying these to it made the clock text visibly
+        # change size when switching tabs even though its own content doesn't
+        # change. Talent unit-header dividers ("JP"/"ID"/"EN", etc.) don't
+        # share that reasoning -- their row height (divider_height, above) is
+        # still fully grid_scale-compressed, so their font has to move with
+        # it the same way the pre-refactor single-file widget kept both in
+        # lockstep, or a dense roster at a small window size shrinks the row
+        # far more than the text drawn into it, overlapping neighboring rows.
+        clock_divider_font = font(max(2, round(10 * self.text_scale)), True)
+        unit_divider_font = font(max(2, round(10 * label_scale)), True)
         clock_label_size = max(2, round(16 * self.text_scale))
         clock_min_label_size = min(MIN_LABEL_SIZE, clock_label_size)
         # "band" items only exist on the "All" tab (see build_grid_layout()'s
@@ -200,6 +206,8 @@ class RenderingMixin:
                     8, fill=production_band_color(band_base, item["position"]))
                 continue
             if item["type"] == "divider":
+                divider_font = (clock_divider_font if item.get("kind") == "clock"
+                                 else unit_divider_font)
                 draw.text((40, item["y"]), item["unit"], font=divider_font,
                           fill=self.text_color(colors["muted"]))
                 label_w = divider_font.getbbox(item["unit"])[2]

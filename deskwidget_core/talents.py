@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from .paths import ROOT, load_json
 
 PRODUCTIONS_DIR = ROOT / "productions"
@@ -18,13 +20,39 @@ UNOBSERVED_STATE = "unknown"
 
 # Used only if productions/index.json is missing/corrupt/empty, so the
 # widget always has at least one production to show instead of an empty
-# tab bar and no talents at all.
-_FALLBACK_PRODUCTION = {
-    "id": "hololive",
-    "name": {"ja": "ホロライブ", "en": "hololive"},
-    "file": "hololive.json",
-    "auto_resolve": "hololivepro",
-}
+# tab bar and no talents at all. This module is shared by every variant, so
+# the fallback isn't hardcoded to a single production: it prefers
+# hololive.json (what every variant ships today) but falls through to
+# whichever talent-list file this variant's own productions/ directory
+# actually has, so a future variant that ships without one still gets a
+# fallback instead of a hardcoded id/file it may not have.
+def _fallback_production():
+    try:
+        files = sorted(path.name for path in PRODUCTIONS_DIR.glob("*.json")
+                        if path.name != "index.json")
+    except OSError:
+        files = []
+    if "hololive.json" in files:
+        return {
+            "id": "hololive",
+            "name": {"ja": "ホロライブ", "en": "hololive"},
+            "file": "hololive.json",
+            "auto_resolve": "hololivepro",
+        }
+    if files:
+        filename = files[0]
+        stem = Path(filename).stem
+        return {"id": stem, "name": {"ja": stem, "en": stem}, "file": filename}
+    # No production file at all -- still returns something rather than None,
+    # so load_productions() always has one entry; load_targets() on it will
+    # just come back empty since load_json() treats the missing file as a
+    # missing-default case too.
+    return {
+        "id": "hololive",
+        "name": {"ja": "ホロライブ", "en": "hololive"},
+        "file": "hololive.json",
+        "auto_resolve": "hololivepro",
+    }
 
 
 def load_productions():
@@ -47,7 +75,7 @@ def load_productions():
             continue
         seen_ids.add(entry["id"])
         productions.append(entry)
-    return productions or [_FALLBACK_PRODUCTION]
+    return productions or [_fallback_production()]
 
 
 def production_display_name(production, lang):

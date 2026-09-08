@@ -19,19 +19,19 @@ def _write_index(entries):
 
 
 def test_load_productions_falls_back_when_index_missing():
-    assert talents.load_productions() == [talents._FALLBACK_PRODUCTION]
+    assert talents.load_productions() == [talents._fallback_production()]
 
 
 def test_load_productions_falls_back_when_index_is_not_a_list():
     _write_index({"id": "hololive"})
 
-    assert talents.load_productions() == [talents._FALLBACK_PRODUCTION]
+    assert talents.load_productions() == [talents._fallback_production()]
 
 
 def test_load_productions_falls_back_when_result_is_empty():
     _write_index([{"id": "x"}])  # missing required "file" key, dropped
 
-    assert talents.load_productions() == [talents._FALLBACK_PRODUCTION]
+    assert talents.load_productions() == [talents._fallback_production()]
 
 
 def test_load_productions_drops_entries_missing_id_or_file():
@@ -50,7 +50,7 @@ def test_load_productions_drops_entries_missing_id_or_file():
 def test_load_productions_rejects_all_pseudo_id():
     _write_index([{"id": talents.ALL_PRODUCTION_ID, "file": "x.json"}])
 
-    assert talents.load_productions() == [talents._FALLBACK_PRODUCTION]
+    assert talents.load_productions() == [talents._fallback_production()]
 
 
 def test_load_productions_dedupes_by_id_keeping_first():

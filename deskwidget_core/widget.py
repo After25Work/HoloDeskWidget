@@ -267,7 +267,17 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         return slot
 
     def _valid_production_ids(self):
-        return set(self._productions_by_id) | {ALL_PRODUCTION_ID}
+        # ALL_PRODUCTION_ID is only ever reachable through the UI when there's
+        # more than one production (see has_multiple_productions()) -- a
+        # single-production variant has no "All" tab to click, so a stale or
+        # hand-edited settings.json shouldn't be able to switch into it either;
+        # _all_targets() would otherwise collapse that production's own
+        # per-unit grouping into one section while render() still draws the
+        # single-production chrome.
+        ids = set(self._productions_by_id)
+        if self.has_multiple_productions():
+            ids.add(ALL_PRODUCTION_ID)
+        return ids
 
     def _visible_productions(self):
         # self.productions filtered down to the ones the user has left
@@ -282,17 +292,41 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # reads as "everything" rather than one production among equals.
         return [ALL_PRODUCTION] + self._visible_productions()
 
+    def _aggregate_keys(self):
+        # Talent names aren't unique *across* productions (e.g. a custom.json
+        # entry sharing a name with a talent in another enabled production),
+        # but self.states/self.live_urls/self.channel_urls/self.live_titles
+        # and the tuples _all_targets() returns are both keyed by plain name.
+        # Disambiguate every name beyond the first production that uses it
+        # with its production id, so _merge_all_slots() and _all_targets()
+        # agree on one key per talent instead of two same-named talents from
+        # different productions silently overwriting each other's merged
+        # state/URLs (and open_target() misdirecting a click on one talent to
+        # the other's live stream/channel).
+        seen = {}
+        keys = {}
+        for production in self._visible_productions():
+            slot = self._production_slot(production["id"])
+            for name, _slug, _url, _unit in slot["targets"]:
+                count = seen.get(name, 0)
+                seen[name] = count + 1
+                keys[(production["id"], name)] = name if count == 0 else f"{name} ({production['id']})"
+        return keys
+
     def _merge_all_slots(self, key):
         # Dict fields (states/channel_urls/live_urls/live_titles) merged
         # fresh on every access rather than cached, so this always reflects
         # whatever the per-production refresh threads have written into
         # self.production_data[prod_id] directly (see the note below) instead
         # of a stale snapshot from whenever the "All" tab was last entered.
+        aggregate_keys = self._aggregate_keys()
         merged = {}
         for production in self._visible_productions():
             slot = self._production_slot(production["id"])
             with slot["lock"]:
-                merged.update(slot[key])
+                slot_values = dict(slot[key])
+            for name, value in slot_values.items():
+                merged[aggregate_keys[(production["id"], name)]] = value
         return merged
 
     def _all_targets(self):
@@ -300,11 +334,13 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # so build_grid_layout()'s per-unit grouping renders one category per
         # production here instead of merging same-named units (e.g. "JP")
         # across different productions into one section.
+        aggregate_keys = self._aggregate_keys()
         targets = []
         for production in self._visible_productions():
             label = production_display_name(production, self.lang)
             slot = self._production_slot(production["id"])
-            targets.extend((name, slug, url, label) for name, slug, url, _unit in slot["targets"])
+            targets.extend((aggregate_keys[(production["id"], name)], slug, url, label)
+                            for name, slug, url, _unit in slot["targets"])
         return targets
 
     # These five reflect whichever production is active_production right

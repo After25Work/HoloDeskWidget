@@ -4,6 +4,7 @@ YouTube. Runs off the Tk main thread (see refresh_worker()'s note), only ever
 touching self.production_data[prod_id] directly rather than the
 active-tab-relative self.targets/self.states/etc. properties.
 """
+import queue
 import re
 import threading
 import time
@@ -83,26 +84,40 @@ class RefreshMixin:
                         for production in self._visible_productions()]
             else:
                 jobs = [(prod_id, self.production_data[prod_id], self._productions_by_id[prod_id].get("auto_resolve"))]
-            # Plain daemon threads instead of ThreadPoolExecutor: its worker
-            # threads register with concurrent.futures' own atexit hook and
-            # get joined before the interpreter is allowed to exit, so a
-            # single slow/hanging youtube.fetch_live_info() call — which can
-            # stack multiple 20s-timeout network requests (channel-id
+            tasks = [(job_prod_id, slot, auto_resolve, name, slug, target)
+                     for job_prod_id, slot, auto_resolve in jobs
+                     for name, slug, target, _ in slot["targets"]]
+            if not tasks:
+                return
+            task_queue = queue.Queue()
+            for task in tasks:
+                task_queue.put(task)
+
+            def drain_queue():
+                while True:
+                    try:
+                        task = task_queue.get_nowait()
+                    except queue.Empty:
+                        return
+                    self.check_one(*task)
+
+            # A small fixed-size pool draining a queue, not one thread per
+            # talent: on the "All" tab across every production (hundreds of
+            # talents for the VT variant) a thread-per-talent approach spawns
+            # and tears down hundreds of OS threads every single refresh
+            # cycle even though only 12 of them ever do real work at once.
+            # Still plain daemon threads rather than ThreadPoolExecutor: its
+            # worker threads register with concurrent.futures' own atexit
+            # hook and get joined before the interpreter is allowed to exit,
+            # so a single slow/hanging youtube.fetch_live_info() call — which
+            # can stack multiple 20s-timeout network requests (channel-id
             # resolution, an internal retry on the browse call, and this
             # module's own 404 channel re-resolve path) well past a single
             # 20s bound — would keep the whole process — and the
             # single-instance mutex it holds — alive well after the window
             # closes. Daemon threads are simply abandoned on exit instead.
-            semaphore = threading.Semaphore(12)
-
-            def bounded_check(job_prod_id, slot, auto_resolve, name, slug, target):
-                with semaphore:
-                    self.check_one(job_prod_id, slot, auto_resolve, name, slug, target)
-
-            workers = [threading.Thread(target=bounded_check,
-                                         args=(job_prod_id, slot, auto_resolve, name, slug, target), daemon=True)
-                       for job_prod_id, slot, auto_resolve in jobs
-                       for name, slug, target, _ in slot["targets"]]
+            pool_size = min(12, len(tasks))
+            workers = [threading.Thread(target=drain_queue, daemon=True) for _ in range(pool_size)]
             for worker in workers:
                 worker.start()
             for worker in workers:

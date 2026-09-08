@@ -14,6 +14,7 @@ EN_NAME_OVERRIDES = {
     "la-darknesss": "Laplus Darknesss",
     "roboco-san": "Roboco-san",
     "achrora": "ACHRORA",
+    "kson": "kson",
 }
 
 # Hardcoded (not locale/strftime-derived) so the world clock's weekday names

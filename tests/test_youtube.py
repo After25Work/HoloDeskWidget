@@ -41,7 +41,7 @@ def test_is_stale_channel_error_false_for_unrelated_exception():
 def test_build_search_fallback_url_quotes_the_name():
     url = youtube.build_search_fallback_url("Tokino Sora")
 
-    assert url == "https://www.youtube.com/results?search_query=hololive+Tokino+Sora"
+    assert url == "https://www.youtube.com/results?search_query=Tokino+Sora"
 
 
 # -- resolve_channel_url ------------------------------------------------------

@@ -278,8 +278,8 @@ class GridMixin:
         # num_cols, since a date+time string is far longer than a talent
         # name and the clock should look the same regardless of how the
         # talent grid below wraps.
-        layout_items.append({"type": "divider", "y": y, "unit": self.t("clock_category"),
-                              "h": clock_divider_height})
+        layout_items.append({"type": "divider", "kind": "clock", "y": y,
+                              "unit": self.t("clock_category"), "h": clock_divider_height})
         y += clock_divider_height
         # clock_layout lets a caller that already computed this (compute_grid(),
         # across every candidate column count it tries plus its final build)
@@ -339,7 +339,7 @@ class GridMixin:
             # neighbors -- see its own note.
             band_index = len(layout_items)
             band_start_y = y
-            layout_items.append({"type": "divider", "y": y, "unit": unit, "h": divider_height})
+            layout_items.append({"type": "divider", "kind": "unit", "y": y, "unit": unit, "h": divider_height})
             y += divider_height
             col = 0
             for index in indices:
@@ -426,6 +426,22 @@ class GridMixin:
         # focus_next()/focus_prev()) just let this fall through to self.
         targets = self.targets if targets is None else targets
         states = self.states if states is None else states
+
+        # The column-count search below (and every build_grid_layout()/
+        # widest_fit() call inside it) is pure given (width, height,
+        # text_scale, live_only, targets, states) -- but render() calls this
+        # unconditionally on every ~60ms live-only ticker tick, and those
+        # inputs are almost always unchanged between one tick and the next
+        # (nothing resizes/rescales/goes live or offline mid-scroll). Cached
+        # on exactly those inputs so a tick that changes none of them reuses
+        # last call's result instead of re-running the whole search; any
+        # actual change (resize, a text-scale drag, a state transition) still
+        # falls through and recomputes normally.
+        cache_key = (self.width, self.height, self.text_scale, self.live_only,
+                     tuple(targets), tuple(sorted(states.items())))
+        cached = getattr(self, "_grid_cache", None)
+        if cached is not None and cached[0] == cache_key:
+            return cached[1]
 
         # Visible labels are the same regardless of which column count ends
         # up chosen below — only the column *width* they're measured against
@@ -533,7 +549,9 @@ class GridMixin:
                                                          clock_divider_height=clock_divider_height,
                                                          clock_layout=clock_layout,
                                                          targets=targets, states=states)
-        return layout_items, row_height, divider_height, scale
+        result = (layout_items, row_height, divider_height, scale)
+        self._grid_cache = (cache_key, result)
+        return result
 
     def focusable_items(self, grid_layout=None, row_height=None, targets=None):
         # Ordered list of keyboard-focusable regions, built from the same
