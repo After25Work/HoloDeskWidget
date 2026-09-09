@@ -6,6 +6,8 @@ button/menu/refresh action was hit.
 import tkinter as tk
 
 from .config import (
+    COLUMN_SCALE_MAX,
+    COLUMN_SCALE_MIN,
     FONT_UI_SMALL,
     MAX_HEIGHT,
     MAX_WIDTH,
@@ -52,6 +54,12 @@ class InteractionMixin:
         self.surface.bind("<Left>", lambda event: self.adjust_focus_slider(-1))
         self.surface.bind("<Right>", lambda event: self.adjust_focus_slider(1))
         self.surface.bind("<Escape>", self.clear_focus)
+        # Ctrl+F jumps to the title filter box without reaching for the mouse,
+        # the same shortcut every browser/editor uses for "find". Both cases
+        # are bound because Tk reports the keysym's own case, which follows
+        # whether Shift/CapsLock is down.
+        self.surface.bind("<Control-f>", self.focus_search)
+        self.surface.bind("<Control-F>", self.focus_search)
 
     def _hit_button_at(self, x, y):
         return next((key for key, rect in self.top_button_rects().items()
@@ -170,8 +178,7 @@ class InteractionMixin:
                 return
         hit_button = self._hit_button_at(event.x, event.y)
         hit_tab = next((tab for tab in self.production_tabs()
-                        if self._in_rect(event.x, event.y,
-                                         (tab["x"], tab["y"], tab["x"] + tab["w"], tab["y"] + tab["h"]))),
+                        if self._in_rect(event.x, event.y, tab["rect"])),
                        None)
         if hit_button is not None:
             if hit_button == guard:
@@ -185,6 +192,11 @@ class InteractionMixin:
             self.switch_production(hit_tab["id"])
         elif self._in_rect(event.x, event.y, self.refresh_btn_rect()):
             self.refresh()
+        elif self.title_query and self._in_rect(event.x, event.y, self.search_clear_rect()):
+            # Only hit-tested while a query is active -- the same rect carries
+            # the "filter by stream title" hint text when the field is empty,
+            # and clicking a hint shouldn't do anything.
+            self.clear_title_query()
         elif self.grid_top() - _GRID_HIT_TOP_MARGIN <= event.y < self.height - _GRID_HIT_BOTTOM_MARGIN:
             grid_layout, row_height, _, _ = self.compute_grid()
             for item in grid_layout:
@@ -231,14 +243,9 @@ class InteractionMixin:
         item = items[self.focus_index]
         if item["kind"] != "slider":
             return "break"
-        if item["slider_key"] == "background":
-            darkness = 1.0 - self.background_alpha
-            darkness = max(MIN_BACKGROUND_DARKNESS, min(1.0, darkness + direction * _SLIDER_KEY_STEP))
-            self.background_alpha = 1.0 - darkness
-            self._apply_background_alpha()
-        else:
-            step = (TEXT_SCALE_MAX - TEXT_SCALE_MIN) * _SLIDER_KEY_STEP
-            self.text_scale = max(TEXT_SCALE_MIN, min(TEXT_SCALE_MAX, self.text_scale + direction * step))
+        key = item["slider_key"]
+        low, high = self.slider_range(key)
+        self.set_slider_value(key, self.slider_value(key) + direction * (high - low) * _SLIDER_KEY_STEP)
         self.request_render()
         return "break"
 
@@ -287,12 +294,11 @@ class InteractionMixin:
     def _show_tooltip(self, text, root_x, root_y):
         self._tooltip_after = None
         colors = self.theme_colors()
-        win = tk.Toplevel(self.root)
-        win.overrideredirect(True)
-        win.attributes("-topmost", True)
+        bg = self._hex(self.tint(colors["neutral_btn"]))
+        win = self._make_popup_toplevel(bg)
         label = tk.Label(win, text=text, justify="left", font=FONT_UI_SMALL, padx=8, pady=4,
                          relief="solid", borderwidth=1,
-                         bg=self._hex(self.tint(colors["neutral_btn"])), fg=self._hex(colors["text"]))
+                         bg=bg, fg=self._hex(colors["text"]))
         label.pack()
         win.geometry(f"+{root_x + _TOOLTIP_OFFSET_X}+{root_y + _TOOLTIP_OFFSET_Y}")
         self.tooltip_win = win
@@ -313,25 +319,50 @@ class InteractionMixin:
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
 
-    def update_slider(self, key, x):
+    # The three slider row controls, expressed once as range/read/write so
+    # pointer drags (update_slider), keyboard Left/Right (adjust_focus_slider)
+    # and the slider drawing in rendering.py all share one definition of what
+    # each slider's value means. Adding a fourth slider is then a matter of
+    # naming it in grid_layout.SLIDER_BLOCKS and adding a branch to these
+    # three, rather than a set_*_from_pointer() plus a keyboard branch plus a
+    # bespoke draw call that can each drift from the others.
+    @staticmethod
+    def slider_range(key):
         if key == "background":
-            self.set_alpha_from_pointer(x)
+            # Darkness (the inverse of background_alpha) rather than the alpha
+            # itself, so the value rises to the right like the other two and
+            # the whole track maps onto the range darkness can actually take.
+            return MIN_BACKGROUND_DARKNESS, 1.0
+        if key == "text":
+            return TEXT_SCALE_MIN, TEXT_SCALE_MAX
+        return COLUMN_SCALE_MIN, COLUMN_SCALE_MAX
+
+    def slider_value(self, key):
+        if key == "background":
+            return 1.0 - self.background_alpha
+        if key == "text":
+            return self.text_scale
+        return self.column_scale
+
+    def set_slider_value(self, key, value):
+        low, high = self.slider_range(key)
+        value = max(low, min(high, value))
+        if key == "background":
+            self.background_alpha = 1.0 - value
+            self._apply_background_alpha()
         elif key == "text":
-            self.set_text_scale_from_pointer(x)
+            self.text_scale = value
+        else:
+            self.column_scale = value
 
-    def set_alpha_from_pointer(self, x):
-        # Dragging right increases darkness/opacity (matches "背景濃さ"/"BG"). The
-        # full track maps onto MIN_BACKGROUND_DARKNESS..1.0 darkness so the knob can
-        # reach both ends even though darkness never actually reaches 0%.
-        bg = self.slider_geometry()["background"]
-        fraction = max(0.0, min(1.0, (x - bg["track_start"]) / (bg["track_end"] - bg["track_start"])))
-        background_darkness = MIN_BACKGROUND_DARKNESS + fraction * (1.0 - MIN_BACKGROUND_DARKNESS)
-        self.background_alpha = 1.0 - background_darkness
-        self._apply_background_alpha()
-        self.request_render()
+    def slider_fraction(self, key):
+        low, high = self.slider_range(key)
+        return (self.slider_value(key) - low) / (high - low)
 
-    def set_text_scale_from_pointer(self, x):
-        txt = self.slider_geometry()["text"]
-        fraction = max(0.0, min(1.0, (x - txt["track_start"]) / (txt["track_end"] - txt["track_start"])))
-        self.text_scale = TEXT_SCALE_MIN + fraction * (TEXT_SCALE_MAX - TEXT_SCALE_MIN)
+    def update_slider(self, key, x):
+        geometry = self.slider_geometry()[key]
+        low, high = self.slider_range(key)
+        fraction = max(0.0, min(1.0, (x - geometry["track_start"])
+                                / (geometry["track_end"] - geometry["track_start"])))
+        self.set_slider_value(key, low + fraction * (high - low))
         self.request_render()

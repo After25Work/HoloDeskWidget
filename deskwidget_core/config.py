@@ -25,6 +25,14 @@ MIN_WINDOW_ALPHA = 0.05
 MIN_BACKGROUND_DARKNESS = 0.3
 TEXT_SCALE_MIN = 0.8
 TEXT_SCALE_MAX = 1.0
+# How far the user may widen/narrow the fixed text lanes the grid used to
+# hardcode -- the talent grid's column pitch (grid_layout.TARGET_COL_WIDTH)
+# and, in the title view, the name lane the now-playing ticker sits beside
+# (see rendering.py's label_area_w). 1.0 reproduces exactly the widths those
+# two were pinned to before this slider existed, so an existing settings.json
+# with no "column_scale" key looks unchanged after upgrading.
+COLUMN_SCALE_MIN = 0.6
+COLUMN_SCALE_MAX = 2.0
 
 # UI chrome font, shared by menus.py's popups/context menu and
 # interaction.py's tooltip so a future font/size tweak has one place to
@@ -51,6 +59,7 @@ DEFAULT_SETTINGS = {
     "dark_mode": True,
     "live_only": False,
     "text_scale": 1.0,
+    "column_scale": 1.0,
     # Validated against the actually-loaded productions manifest in
     # widget.py (not here) since that's data talents.py owns, not a plain
     # window/UI preference like everything else in this file.
@@ -121,6 +130,9 @@ def load_settings():
     settings["text_scale"] = _coerce_clamped(
         settings["text_scale"], DEFAULT_SETTINGS["text_scale"], float,
         TEXT_SCALE_MIN, TEXT_SCALE_MAX)
+    settings["column_scale"] = _coerce_clamped(
+        settings["column_scale"], DEFAULT_SETTINGS["column_scale"], float,
+        COLUMN_SCALE_MIN, COLUMN_SCALE_MAX)
     settings["active_production"] = _coerce(
         settings["active_production"], DEFAULT_SETTINGS["active_production"], str)
     raw_enabled = settings["enabled_productions"]

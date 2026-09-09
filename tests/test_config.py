@@ -117,3 +117,24 @@ def test_load_settings_enabled_productions_defaults_to_empty_when_not_a_list():
     config.SETTINGS_PATH.write_text('{"enabled_productions": "hololive"}', encoding="utf-8")
 
     assert config.load_settings()["enabled_productions"] == []
+
+
+def test_load_settings_clamps_column_scale_to_bounds():
+    config.SETTINGS_PATH.write_text(
+        f'{{"column_scale": {config.COLUMN_SCALE_MAX + 5}}}', encoding="utf-8")
+
+    assert config.load_settings()["column_scale"] == config.COLUMN_SCALE_MAX
+
+    config.SETTINGS_PATH.write_text(
+        f'{{"column_scale": {config.COLUMN_SCALE_MIN - 5}}}', encoding="utf-8")
+
+    assert config.load_settings()["column_scale"] == config.COLUMN_SCALE_MIN
+
+
+def test_settings_file_predating_the_width_slider_gets_the_neutral_default():
+    # 1.0 is the value that reproduces the fixed column pitch/name lane the
+    # app had before the width slider existed, so upgrading must not move
+    # anything on an existing user's panel.
+    config.SETTINGS_PATH.write_text('{"lang": "en"}', encoding="utf-8")
+
+    assert config.load_settings()["column_scale"] == 1.0

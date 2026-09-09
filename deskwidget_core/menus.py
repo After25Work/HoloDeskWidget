@@ -377,6 +377,11 @@ class MenuMixin:
                          command=self.toggle_fullscreen)
         menu.add_command(label=self._checked_label(self.t("live_filter"), self.live_only),
                          command=self.toggle_live_only)
+        # Only offered while a query is actually typed -- the filter box is
+        # always on screen, so a permanently-present "clear" entry would
+        # mostly be a no-op taking up a menu row.
+        if self.title_query:
+            menu.add_command(label=self.t("clear_filter"), command=self.clear_title_query)
         # Label names the CURRENT mode (like draw_mode_button()'s moon/sun icon),
         # not a fixed "Dark Mode" checkbox, for the same reason.
         menu.add_command(label=self.t("dark_mode") if self.dark_mode else self.t("light_mode"),

@@ -18,10 +18,12 @@ A Windows desktop widget that keeps the live-stream status of VTuber talents vis
   Right-clicking a card brings up a menu to copy the talent's name or stream title to the clipboard.
 - **Always-on-top, semi-transparent desktop widget**: A persistent, transparent window you can drag by its background to move, and drag by its edges/corners to resize.
 - **LIVE filter**: Narrows the list down to only the talents currently live, and shows their stream titles as a scrolling ticker.
+- **Stream-title search (incremental)**: Type in the search box below the sliders and the list narrows to matching stream titles as you type (case-insensitive). While a filter is active each matching talent's stream title is shown beside their name and the status bar switches to a "matched" count. `Ctrl+F` jumps to the box; `Esc` or the × button beside it clears the filter.
 - **World clock**: Displays the region name and current time for a configurable list of zones (Hawaii/Los Angeles/New York/UTC/Central Europe/Dubai/Jakarta/Tokyo by default) alongside the talent list.<br>
   Edit `clock_zones.json` to add, remove, or relabel zones (or rename their regions) without touching code.
 - **Display customization**: Toggle always-on-top, dark/light mode, theme color (palette), font, display language (Japanese/English), and which production tabs are shown (checklist, with "Enable All" / "Disable All" shortcuts) from the top-right buttons or the right-click menu.<br>
-  Background opacity and text size are adjustable via sliders.
+  Background opacity and text size are adjustable via sliders.<br>
+  A "Width" slider adjusts the text lane widths (the talent-name column pitch, and the name/stream-title split in the LIVE view), so widening it spells out long names that were previously truncated.
 - **Settings persistence**: Window position/size, language, theme, font, active/shown production tabs, and other personal settings are saved automatically to `settings.json` and restored on the next launch.
 - **Automatic channel resolution (hololive tab only)**: On startup, resolves each hololive talent's YouTube channel from the hololive official site's talent page, falling back to that talent's `channel_url` only if resolution fails.<br>
   Other productions don't have a known official site to scrape, so they always use the `channel_url` given in their JSON file directly.

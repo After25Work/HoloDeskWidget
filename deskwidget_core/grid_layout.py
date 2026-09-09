@@ -21,7 +21,14 @@ from .talents import ALL_PRODUCTION_ID, production_display_name
 TABS_BOTTOM_GAP = 12
 STATUS_BAR_HEIGHT = 37
 STATUS_SLIDER_GAP = 5
-SLIDER_GRID_GAP = 22
+# The title-filter row sits between the slider row and the grid. It is always
+# drawn (rather than toggled open by a button of its own) so an incremental
+# search is one click away and, more importantly, so grid_top() below stays a
+# plain sum of fixed offsets -- a row that appears and disappears would move
+# every talent row down/up under the pointer the moment the field was opened.
+SLIDER_SEARCH_GAP = 22
+SEARCH_ROW_HEIGHT = 24
+SEARCH_GRID_GAP = 12
 
 # Shared by build_grid_layout() and compute_grid() -- these two must never
 # disagree, since compute_grid() searches for a scale/column-count pair that
@@ -29,6 +36,12 @@ SLIDER_GRID_GAP = 22
 # the available height; a mismatched margin/column-pitch pair here would let
 # the two silently drift apart on some window sizes.
 GRID_MARGIN = 40
+# The talent grid's column pitch at column_scale == 1.0. No longer used
+# directly as "the" column width -- target_col_width() below multiplies it by
+# the user's own width slider (see config.COLUMN_SCALE_MIN/MAX) -- but still
+# the pitch the world clock's own column cap is measured against, so
+# adjusting the talent grid's width never reflows the clock section along
+# with it (see _clock_layout()).
 TARGET_COL_WIDTH = 110
 # Extra right-side padding subtracted from the window width alongside
 # GRID_MARGIN (the left-side one) when computing how much horizontal room
@@ -47,6 +60,50 @@ DEFAULT_DIVIDER_HEIGHT = 18
 # resize hit-band always hugs the panel's actual drawn edge instead of the
 # two silently drifting apart if one is ever changed without the other.
 PANEL_INSET = 20
+
+# Horizontal padding subtracted from a column/cell's raw width to get the
+# width actually available to its label -- shared by every column-width ->
+# max_label_width conversion here and in rendering.py so they can't drift.
+LABEL_PADDING = 12
+
+# The control row's three sliders, left to right, with the block width each
+# one's label+track occupies. Laid out right-to-left from the panel's right
+# edge (see slider_geometry()), so a slider added at the FRONT of this tuple
+# leaves the ones after it exactly where they already were on screen.
+SLIDER_BLOCKS = (("width", 124), ("background", 134), ("text", 124))
+SLIDER_BLOCK_GAP = 14
+# Label offset within a block, sized for the longest of the three labels'
+# "label + 100%" text ("背景濃さ 100%") and reused for all of them so their
+# tracks start at the same offset within their own blocks.
+SLIDER_LABEL_OFFSET = 74
+
+# Title-filter row geometry. The box is a fraction of the content width
+# (clamped, so it stays usable at MIN_WIDTH and doesn't sprawl across a 4K
+# panel) rather than the full row: the space left over to its right carries
+# the hint text / clear button, which would otherwise need a row of their own.
+SEARCH_BOX_MIN_WIDTH = 220
+SEARCH_BOX_MAX_WIDTH = 420
+SEARCH_BOX_WIDTH_FRACTION = 0.5
+# Left lane inside the box reserved for the magnifier glyph, and the padding
+# between the entry's right edge and the box's.
+SEARCH_ICON_LANE = 26
+SEARCH_ENTRY_PADDING = 8
+SEARCH_CLEAR_WIDTH = 26
+SEARCH_CLEAR_GAP = 10
+
+# Vertical hit-band around a slider's y (asymmetric: the visible track sits
+# near the top of its row, so the clickable band extends further below it
+# than above) -- shared by focusable_items() and slider_hit() below so their
+# two independently-hit-tested bands can't silently disagree about where a
+# click on the slider row actually lands.
+SLIDER_HIT_PAD_TOP = 5
+SLIDER_HIT_PAD_BOTTOM = 15
+
+# Vertical room reserved below the talent grid for the refresh button/footer
+# -- shared by compute_grid() (sizing the grid to leave this much room) and
+# widget.py's _fit_height_value() (sizing the window to give the grid that
+# same room back) so the two can't silently drift apart.
+FOOTER_RESERVED_HEIGHT = 90
 
 
 class GridMixin:
@@ -100,6 +157,7 @@ class GridMixin:
         rects, _ = layout.production_tab_rects(self.width, len(tab_productions))
         return [
             {"id": production["id"], "x": x, "y": y, "w": w, "h": h,
+             "rect": (x, y, x + w, y + h),
              "label": production_display_name(production, self.lang)}
             for production, (x, y, w, h) in zip(tab_productions, rects)
         ]
@@ -117,8 +175,38 @@ class GridMixin:
     def slider_row_y(self):
         return self.status_bar_bottom() + STATUS_SLIDER_GAP
 
+    def search_row_y(self):
+        return self.slider_row_y() + SLIDER_SEARCH_GAP
+
+    def search_box_rect(self):
+        # The drawn field itself (magnifier lane + the native entry placed
+        # over it -- see search.py). Left-aligned with the status bar above it
+        # rather than with GRID_MARGIN, so the control column reads as one
+        # stack down the panel's left edge.
+        top = self.search_row_y()
+        content_left, content_right = 38, self.width - 38
+        content_width = content_right - content_left
+        box_width = min(SEARCH_BOX_MAX_WIDTH,
+                        max(SEARCH_BOX_MIN_WIDTH, content_width * SEARCH_BOX_WIDTH_FRACTION))
+        # Never let the box crowd out the clear button/hint beside it, even on
+        # a window narrow enough that SEARCH_BOX_MIN_WIDTH alone wouldn't fit.
+        box_width = max(0, min(box_width, content_width - SEARCH_CLEAR_GAP - SEARCH_CLEAR_WIDTH))
+        return (content_left, top, content_left + box_width, top + SEARCH_ROW_HEIGHT)
+
+    def search_entry_rect(self):
+        left, top, right, bottom = self.search_box_rect()
+        return (left + SEARCH_ICON_LANE, top + 2, right - SEARCH_ENTRY_PADDING, bottom - 2)
+
+    def search_clear_rect(self):
+        # Sits immediately right of the box, in the same slot the hint text
+        # occupies while the field is empty -- so the row never changes width
+        # as a query is typed and cleared.
+        _, top, right, bottom = self.search_box_rect()
+        left = right + SEARCH_CLEAR_GAP
+        return (left, top, left + SEARCH_CLEAR_WIDTH, bottom)
+
     def grid_top(self):
-        return self.slider_row_y() + SLIDER_GRID_GAP
+        return self.search_row_y() + SEARCH_ROW_HEIGHT + SEARCH_GRID_GAP
 
     def resize_grip_rect(self):
         # Kept clear of refresh_btn_rect()'s bottom-right corner (which ends at
@@ -167,25 +255,42 @@ class GridMixin:
         return (38, self.height - 65, self.width - 44, self.height - 34)
 
     def slider_geometry(self):
-        # Both sliders sit on one row, right-justified as a pair against the
+        # Every slider sits on one row, right-justified as a group against the
         # panel's right edge — fixed (not width-proportional) block widths so
-        # they still fit side by side at MIN_WIDTH. Label offset (74px) is
-        # sized for the longer of the two languages' "label + 100%" text
-        # ("背景濃さ 100%"), reused for both sliders for simplicity.
+        # they still fit side by side at MIN_WIDTH, and packed right-to-left
+        # from SLIDER_BLOCKS so the existing background/text pair keeps its
+        # exact on-screen position now that a third (width) slider has joined
+        # them on the left. Returned in SLIDER_BLOCKS' own left-to-right order
+        # so focusable_items()'s Tab order follows the visual reading order.
+        y = self.slider_row_y()
         content_right = self.width - 40
-        y, gap, label_offset = self.slider_row_y(), 14, 74
-        text_width, bg_width = 124, 134
-        text_x = content_right - text_width
-        bg_x = text_x - gap - bg_width
+        lefts = {}
+        cursor = content_right
+        for key, block_width in reversed(SLIDER_BLOCKS):
+            lefts[key] = cursor - block_width
+            cursor = lefts[key] - SLIDER_BLOCK_GAP
         return {
-            "background": {"x": bg_x, "y": y, "track_start": bg_x + label_offset,
-                           "track_end": bg_x + bg_width},
-            "text": {"x": text_x, "y": y, "track_start": text_x + label_offset,
-                     "track_end": text_x + text_width},
+            key: {"x": lefts[key], "y": y,
+                  "track_start": lefts[key] + SLIDER_LABEL_OFFSET,
+                  "track_end": lefts[key] + block_width}
+            for key, block_width in SLIDER_BLOCKS
         }
 
-    def _clock_layout(self, available, natural_cols):
-        # Picks how many columns (<=3, capped by natural_cols on a narrow
+    def target_col_width(self):
+        # The talent grid's column pitch: TARGET_COL_WIDTH scaled by the
+        # user's width slider (config.COLUMN_SCALE_MIN/MAX). Widening it makes
+        # each column hold a longer name before _fit_label() has to shrink or
+        # ellipsize it -- at the cost of fitting fewer columns across the
+        # panel -- and narrowing it packs more, shorter-labelled columns in.
+        # Kept here (rather than inlined at its two call sites) for the same
+        # reason GRID_MARGIN/TARGET_COL_WIDTH are shared constants:
+        # build_grid_layout() and compute_grid() must agree on the pitch
+        # exactly or compute_grid()'s search picks a scale for a layout
+        # build_grid_layout() never actually produces.
+        return TARGET_COL_WIDTH * self.column_scale
+
+    def _clock_layout(self, available, col_cap):
+        # Picks how many columns (<=3, capped by col_cap on a narrow
         # window) the world clock packs into at this window width, trying
         # the widest layout first and falling back to fewer/wider columns
         # whenever the natural (unshrunk) text doesn't fit -- see the note
@@ -206,7 +311,7 @@ class GridMixin:
         clock_texts = [f"{date_part} {label} {time_part}" for label, date_part, time_part in clock_entries]
         clock_label_size = max(2, round(16 * self.text_scale))
         clock_col_gap = 24
-        max_clock_cols = min(natural_cols, 3)
+        max_clock_cols = min(col_cap, 3)
         clock_cols, col_widths = max_clock_cols, None
         for candidate_cols in range(max_clock_cols, 0, -1):
             # Columns are packed to their own natural content width (each one
@@ -223,20 +328,20 @@ class GridMixin:
             widths = [0.0] * candidate_cols
             for i, text in enumerate(clock_texts):
                 c = i % candidate_cols
-                widths[c] = max(widths[c], self._label_width(text, clock_label_size, True) + 12)
+                widths[c] = max(widths[c], self._label_width(text, clock_label_size, True) + LABEL_PADDING)
             total = sum(widths) + clock_col_gap * (candidate_cols - 1)
             if total <= available or candidate_cols == 1:
                 clock_cols, col_widths = candidate_cols, widths
                 break
         return clock_entries, clock_texts, clock_cols, col_widths, clock_col_gap
 
-    def _layout_clock_section(self, layout_items, y, margin, available, natural_cols,
+    def _layout_clock_section(self, layout_items, y, margin, available, col_cap,
                                clock_row_height, clock_divider_height, clock_layout):
         # World clock: shown as its own category using the exact same
         # divider-header + grid mechanics as a talent unit below, so it
         # scales with everything else instead of living in a separately
         # positioned fixed block. It always gets its own <=3-column sub-grid
-        # (capped by natural_cols on narrow windows, and narrowed further
+        # (capped by col_cap on narrow windows, and narrowed further
         # still if even that doesn't fit -- see _clock_layout() -- never by
         # the talent grid's possibly-overridden num_cols) rather than
         # num_cols, since a date+time string is far longer than a talent
@@ -249,12 +354,12 @@ class GridMixin:
         # clock_layout lets a caller that already computed this (compute_grid(),
         # across every candidate column count it tries plus its final build)
         # pass the same tuple straight through instead of recomputing it --
-        # available/natural_cols above never vary with num_cols, so every one
+        # available/col_cap above never vary with num_cols, so every one
         # of those calls would otherwise redo the exact same _clock_layout()
         # search and measurement work for an identical result.
         clock_entries, clock_texts, clock_cols, col_widths, clock_col_gap = (
             clock_layout if clock_layout is not None
-            else self._clock_layout(available, natural_cols))
+            else self._clock_layout(available, col_cap))
         natural_total = sum(col_widths) + clock_col_gap * (clock_cols - 1)
         if natural_total > available:
             # Still too wide even at 1 column (an unusually narrow window, or
@@ -291,12 +396,14 @@ class GridMixin:
         # shaded background band) to layout_items and returns the y
         # position just below the talent grid.
         #
-        # While the live-only filter is on, every remaining talent is live, so
-        # give each its own full-width row (one line per talent) instead of the
-        # normal grid columns — that's the room the program-title ticker in
-        # render() needs to the right of the name.
-        unit_cols = 1 if self.live_only else num_cols
-        unit_col_width = available if self.live_only else available / num_cols
+        # In the title view (the live-only filter is on, or a title query has
+        # been typed -- see show_titles), every remaining talent is live, so
+        # give each its own full-width row (one line per talent) instead of
+        # the normal grid columns — that's the room the program-title ticker
+        # in render() needs to the right of the name.
+        show_titles = self.show_titles
+        unit_cols = 1 if show_titles else num_cols
+        unit_col_width = available if show_titles else available / num_cols
         group_position = 0
         for unit, indices in units.items():
             # On the "All" tab each unit is a whole production (see
@@ -337,7 +444,7 @@ class GridMixin:
 
     def build_grid_layout(self, row_height, divider_height, num_cols=None,
                            clock_row_height=None, clock_divider_height=None,
-                           clock_layout=None, targets=None, states=None):
+                           clock_layout=None, targets=None, states=None, titles=None):
         # Shared by render() (drawing) and click() (hit-testing) so the two never
         # drift apart. Column count grows with the window so widening reflows more
         # columns in rather than just stretching 3. Talents are grouped by unit
@@ -356,9 +463,17 @@ class GridMixin:
         # just sit empty on the right instead of giving compute_grid() a
         # wider (and therefore taller-scaling) pitch to size the shared label
         # font against.
-        margin, target_col_width = GRID_MARGIN, TARGET_COL_WIDTH
+        margin = GRID_MARGIN
         available = self.width - margin - RIGHT_PADDING
-        natural_cols = max(1, int(available // target_col_width))
+        natural_cols = max(1, int(available // self.target_col_width()))
+        # The world clock's column cap is measured against the UNSCALED
+        # TARGET_COL_WIDTH, not the width slider's pitch: the clock's own
+        # columns are content-sized (see _clock_layout()), so letting the
+        # talent grid's width setting reflow the clock section too would
+        # shove every talent row up or down the panel every time that slider
+        # moved -- exactly the kind of unrelated jump the width control is
+        # supposed to avoid.
+        clock_col_cap = max(1, int(available // TARGET_COL_WIDTH))
         if num_cols is None:
             num_cols = natural_cols
         # The world clock's own row/divider height defaults to the talent
@@ -385,13 +500,18 @@ class GridMixin:
         # (fit_height()'s one-shot call) just let this fall through to self.
         targets = self.targets if targets is None else targets
         states = self.states if states is None else states
+        # Only consulted while a title query is active (see row_visible()),
+        # and render()/compute_grid() only ever merge live_titles when the
+        # title view is on -- so this default never costs a "All"-tab merge
+        # on the plain grid view, where no row's visibility depends on it.
+        titles = self.live_titles if titles is None else titles
         for index, target in enumerate(targets):
-            if self.live_only and states[target[0]] != "live":
+            if not self.row_visible(target[0], states[target[0]], titles):
                 continue
             units.setdefault(target[3], []).append(index)
         layout_items = []
         y = self.grid_top()
-        y = self._layout_clock_section(layout_items, y, margin, available, natural_cols,
+        y = self._layout_clock_section(layout_items, y, margin, available, clock_col_cap,
                                         clock_row_height, clock_divider_height, clock_layout)
         y = self._layout_talent_section(layout_items, y, margin, available, num_cols,
                                          row_height, divider_height, units)
@@ -447,24 +567,28 @@ class GridMixin:
         # stops this from growing past what the window can show.
         if not all_labels:
             return 1.5
-        max_label_width = col_width - 12
+        max_label_width = col_width - LABEL_PADDING
         labels = [label for label in all_labels
                   if self._label_width(label, 16, True) <= max_label_width]
         if not labels:
             return 1.5
         return self._widest_fit(labels, max_label_width) / 16
 
-    def compute_grid(self, targets=None, states=None):
+    def compute_grid(self, targets=None, states=None, titles=None):
         # No scroll support: rows/dividers/fonts scale uniformly so nothing is
         # dropped when the window is too short for the content (shrinking),
         # and text grows a bit for readability when the window is taller than
         # the content needs (see the growth-cap note below) — but the grid
         # itself always stays top-aligned, like an ordinary list.
         grid_top = self.grid_top()
-        available_height = max(1, self.height - grid_top - 90)
-        margin, target_col_width = GRID_MARGIN, TARGET_COL_WIDTH
+        available_height = max(1, self.height - grid_top - FOOTER_RESERVED_HEIGHT)
+        margin = GRID_MARGIN
         available_width = self.width - margin - RIGHT_PADDING
-        natural_cols = max(1, int(available_width // target_col_width))
+        # Both counts mirror build_grid_layout()'s own -- the talent grid on
+        # the width slider's scaled pitch, the world clock on the unscaled
+        # one so it never reflows along with it (see the note there).
+        natural_cols = max(1, int(available_width // self.target_col_width()))
+        clock_col_cap = max(1, int(available_width // TARGET_COL_WIDTH))
 
         # The world clock's row/divider height is pinned to the text-size
         # slider alone (self.text_scale), not to the per-tab `scale` this
@@ -483,7 +607,7 @@ class GridMixin:
         clock_divider_height = DEFAULT_DIVIDER_HEIGHT * self.text_scale
         # Column count must match _clock_layout()'s own search (used by
         # build_grid_layout() to actually draw the clock) rather than the
-        # naive min(natural_cols, 3) this used to hardcode here -- on a
+        # naive min(clock_col_cap, 3) this used to hardcode here -- on a
         # window too narrow to fit 3 columns of a date+region+time string at
         # its natural width, build_grid_layout() falls back to fewer, wider
         # columns (see the note there), which means more rows than this
@@ -495,10 +619,10 @@ class GridMixin:
         # Computed once and passed straight through to every build_grid_layout()
         # call below (each candidate column count in measure()'s search, plus
         # the final build past the loop) instead of letting each one redo this
-        # same search -- available_width/natural_cols never vary with the
+        # same search -- available_width/clock_col_cap never vary with the
         # talent grid's candidate column count, so every one of those calls
         # would otherwise recompute an identical result.
-        clock_layout = self._clock_layout(available_width, natural_cols)
+        clock_layout = self._clock_layout(available_width, clock_col_cap)
         clock_entries, _, clock_cols, _, _ = clock_layout
         clock_rows = -(-len(clock_entries) // clock_cols)
         clock_height = clock_divider_height + clock_rows * clock_row_height
@@ -518,19 +642,28 @@ class GridMixin:
         # focus_next()/focus_prev()) just let this fall through to self.
         targets = self.targets if targets is None else targets
         states = self.states if states is None else states
+        titles = self.live_titles if titles is None else titles
 
         # The column-count search below (and every build_grid_layout()/
         # widest_fit() call inside it) is pure given (width, height,
-        # text_scale, live_only, targets, states) -- but render() calls this
-        # unconditionally on every ~60ms live-only ticker tick, and those
+        # text_scale, column_scale, live_only, title_query, targets, states,
+        # and -- only while a query is active -- titles) -- but render() calls
+        # this unconditionally on every ~60ms live-only ticker tick, and those
         # inputs are almost always unchanged between one tick and the next
         # (nothing resizes/rescales/goes live or offline mid-scroll). Cached
         # on exactly those inputs so a tick that changes none of them reuses
         # last call's result instead of re-running the whole search; any
-        # actual change (resize, a text-scale drag, a state transition) still
-        # falls through and recomputes normally.
-        cache_key = (self.width, self.height, self.text_scale, self.live_only,
-                     tuple(targets), tuple(sorted(states.items())))
+        # actual change (resize, a text-scale drag, a state transition, a
+        # keystroke in the filter box) still falls through and recomputes
+        # normally. Titles are folded into the key only while a query is
+        # active, since that's the only time they decide which rows exist --
+        # otherwise every title change (each refresh cycle) would needlessly
+        # invalidate a layout that doesn't depend on it, and every hit would
+        # pay to hash a few hundred title strings.
+        titles_key = tuple(sorted(titles.items())) if self._title_query_folded else ()
+        cache_key = (self.width, self.height, self.text_scale, self.column_scale,
+                     self.live_only, self._title_query_folded,
+                     tuple(targets), tuple(sorted(states.items())), titles_key)
         cached = getattr(self, "_grid_cache", None)
         if cached is not None and cached[0] == cache_key:
             return cached[1]
@@ -538,8 +671,11 @@ class GridMixin:
         # Visible labels are the same regardless of which column count ends
         # up chosen below — only the column *width* they're measured against
         # changes per candidate — so this is gathered once rather than
-        # inside the per-candidate closure.
-        all_labels = None if self.live_only else self._visible_talent_labels(targets, states)
+        # inside the per-candidate closure. Not needed at all in the title
+        # view (live-only or filtered), where every row is full width and
+        # sized by rendering.py's own name-lane math instead.
+        all_labels = (None if self.show_titles
+                      else self._visible_talent_labels(targets, states, titles))
 
         def measure(cols):
             # build_grid_layout() stretches its talent column pitch to
@@ -549,10 +685,18 @@ class GridMixin:
             # count widens each column, which can raise the ceiling (more
             # room per name) even as it also raises content_height (fewer
             # columns means more rows).
-            scale_cap = self._label_fit_scale(all_labels, available_width / cols)
+            # While a title query is active the row set changes with every
+            # keystroke, so the usual "grow the text to fill a tall window"
+            # ceiling is pinned to 1x instead: narrowing a full roster down
+            # to two matches would otherwise blow those two rows up to
+            # several times their normal size and shrink them back on the
+            # next character typed. Shrinking below 1x is still allowed --
+            # that's what keeps a broad query's matches inside the window.
+            scale_cap = (1.0 if self._title_query_folded
+                         else self._label_fit_scale(all_labels, available_width / cols))
             _, natural_end = self.build_grid_layout(DEFAULT_ROW_HEIGHT, DEFAULT_DIVIDER_HEIGHT, num_cols=cols,
                                                       clock_layout=clock_layout,
-                                                      targets=targets, states=states)
+                                                      targets=targets, states=states, titles=titles)
             content_height = max(1, natural_end - grid_top - clock_base_height)
             raw_scale = available_height / content_height
             return max(0.15, min(scale_cap, raw_scale))
@@ -584,7 +728,8 @@ class GridMixin:
                                                          clock_row_height=clock_row_height,
                                                          clock_divider_height=clock_divider_height,
                                                          clock_layout=clock_layout,
-                                                         targets=targets, states=states)
+                                                         targets=targets, states=states,
+                                                         titles=titles)
         result = (layout_items, row_height, divider_height, scale)
         self._grid_cache = (cache_key, result)
         return result
@@ -615,11 +760,11 @@ class GridMixin:
         items = [{"kind": "button", "rect": btn[key], "activate": actions[key]}
                 for key in visual_order if key in btn]
         for tab in self.production_tabs():
-            rect = (tab["x"], tab["y"], tab["x"] + tab["w"], tab["y"] + tab["h"])
-            items.append({"kind": "tab", "rect": rect,
+            items.append({"kind": "tab", "rect": tab["rect"],
                          "activate": lambda t=tab["id"]: self.switch_production(t)})
         for key, geom in self.slider_geometry().items():
-            rect = (geom["track_start"], geom["y"] - 5, geom["track_end"], geom["y"] + 15)
+            rect = (geom["track_start"], geom["y"] - SLIDER_HIT_PAD_TOP,
+                    geom["track_end"], geom["y"] + SLIDER_HIT_PAD_BOTTOM)
             items.append({"kind": "slider", "rect": rect, "slider_key": key})
         if grid_layout is None:
             grid_layout, row_height, _, _ = self.compute_grid()
@@ -638,7 +783,8 @@ class GridMixin:
         # so drag/click handlers can dispatch to the right setter via
         # update_slider() instead of assuming there's only ever one slider.
         for key, geom in self.slider_geometry().items():
-            if geom["y"] - 5 <= y <= geom["y"] + 15 and geom["track_start"] <= x <= geom["track_end"]:
+            if (geom["y"] - SLIDER_HIT_PAD_TOP <= y <= geom["y"] + SLIDER_HIT_PAD_BOTTOM
+                    and geom["track_start"] <= x <= geom["track_end"]):
                 return key
         return False
 

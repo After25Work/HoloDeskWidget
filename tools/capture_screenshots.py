@@ -394,8 +394,9 @@ def capture_buttons(width, full_img, suffix):
 
 def capture_context_menu(hwnd, suffix):
     left, top, right, bottom = get_window_rect(hwnd)
-    # A blank spot in the info bar (above the talent grid, left of the two
-    # sliders) so the generic menu opens rather than a talent's row menu.
+    # A blank spot in the info bar (above the talent grid, left of the
+    # slider row and above the title-filter row) so the generic menu opens
+    # rather than a talent's row menu.
     click_at(left + 60, top + 130, button="right")
     time.sleep(0.4)
     menu_hwnd = find_window(class_name=MENU_WINDOW_CLASS, timeout=1.0)

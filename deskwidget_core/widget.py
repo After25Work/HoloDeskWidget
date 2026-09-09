@@ -17,12 +17,13 @@ from .config import (
     save_settings,
 )
 from .fonts import set_font_family
-from .grid_layout import DEFAULT_DIVIDER_HEIGHT, DEFAULT_ROW_HEIGHT, GridMixin
+from .grid_layout import DEFAULT_DIVIDER_HEIGHT, DEFAULT_ROW_HEIGHT, FOOTER_RESERVED_HEIGHT, GridMixin
 from .interaction import InteractionMixin
 from .menus import MenuMixin
 from .paths import ROOT, WINDOW_TITLE, log_error
 from .rendering import RenderingMixin
 from .refresh import RefreshMixin
+from .search import SearchMixin
 from .single_instance import bring_to_front
 from .talents import (
     ALL_PRODUCTION,
@@ -34,24 +35,15 @@ from .talents import (
 )
 from .theme import KEY_COLOR
 from .tray import TrayIcon, build_icon_file
+from .win32 import bind, user32 as _user32
 
-# Declared once at module scope, argtypes/restype pinned explicitly — same
-# convention as single_instance.py's own user32 bindings, and for the same
-# reason: without an explicit restype, ctypes defaults a Win32 call's return
-# value to c_int (32-bit signed), which happens to round-trip a HWND
-# correctly today only by coincidence (every HWND fits in 32 bits, and the
-# equally-undeclared argtypes on the write-back call happen to re-sign-extend
-# it the same way) rather than by any documented guarantee.
-_user32 = ctypes.WinDLL("user32", use_last_error=True)
-_user32.GetParent.argtypes = [ctypes.c_void_p]
-_user32.GetParent.restype = ctypes.c_void_p
-_user32.GetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int]
-_user32.GetWindowLongW.restype = ctypes.c_long
-_user32.SetWindowLongW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_long]
-_user32.SetWindowLongW.restype = ctypes.c_long
+bind(_user32.GetParent, [ctypes.c_void_p], ctypes.c_void_p)
+bind(_user32.GetWindowLongW, [ctypes.c_void_p, ctypes.c_int], ctypes.c_long)
+bind(_user32.SetWindowLongW, [ctypes.c_void_p, ctypes.c_int, ctypes.c_long], ctypes.c_long)
 
 
-class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, RefreshMixin):
+class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, RefreshMixin,
+                    SearchMixin):
     def __init__(self):
         self.productions = load_productions()
         self._productions_by_id = {p["id"]: p for p in self.productions}
@@ -89,6 +81,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.dark_mode = settings["dark_mode"]
         self.live_only = settings["live_only"]
         self.text_scale = settings["text_scale"]
+        self.column_scale = settings["column_scale"]
         self.active_production = (settings["active_production"]
             if settings["active_production"] in self._valid_production_ids()
             else self.productions[0]["id"])
@@ -107,6 +100,10 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
 
     def _init_window(self, settings):
         self.suppress_next_click = False
+        # Seeds title_query/the filter entry's own handles. Called before
+        # anything below can render, since render() draws the filter row and
+        # every row-visibility test consults the query.
+        self.init_search()
         self.menu_reopen_guard: Optional[str] = None
         self.slider_drag = False
         self.render_pending = False
@@ -391,7 +388,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
     def live_titles(self):
         return self._slot_field("live_titles")
 
-    def _visible_talent_labels(self, targets=None, states=None):
+    def _visible_talent_labels(self, targets=None, states=None, titles=None):
         # The exact bullet+name text render()'s talent loop draws, without
         # the color/title bookkeeping it also needs — used by compute_grid()
         # to check how large the shared label font (see _shared_label_size())
@@ -406,9 +403,13 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # it straight through so this doesn't re-merge a third time.
         targets = self.targets if targets is None else targets
         states = self.states if states is None else states
+        titles = self.live_titles if titles is None else titles
         for name, slug, _url, _unit in targets:
             state = states[name]
-            if self.live_only and state != "live":
+            # Same predicate build_grid_layout() lays rows out with, so the
+            # shared label size is always measured against exactly the set of
+            # names that ends up on screen.
+            if not self.row_visible(name, state, titles):
                 continue
             bullet, display_name = self.talent_bullet_and_display_name(name, slug, state, self.lang)
             labels.append(bullet + display_name)
@@ -465,7 +466,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # finer grain than tick_clock()'s 1s cadence, so the scroll reads as
         # smooth motion. Only requests a render when there's actually a ticker
         # on screen, so this costs nothing while live_only is off.
-        if self.live_only and self.live_titles:
+        if self.show_titles and self.live_titles:
             self.request_render()
         self.root.after(60, self.tick_ticker)
 
@@ -534,7 +535,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
     def _fit_height_value(self):
         if self.live_only:
             _, natural_end = self.build_grid_layout(DEFAULT_ROW_HEIGHT, DEFAULT_DIVIDER_HEIGHT)
-            target_height = natural_end + 90
+            target_height = natural_end + FOOTER_RESERVED_HEIGHT
         else:
             target_height = self._all_height
         return max(MIN_HEIGHT, min(MAX_HEIGHT, round(target_height)))
@@ -573,6 +574,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
             "dark_mode": self.dark_mode,
             "live_only": self.live_only,
             "text_scale": self.text_scale,
+        "column_scale": self.column_scale,
             "active_production": self.active_production,
             "enabled_productions": [p["id"] for p in self.productions if p["id"] in self.enabled_productions],
         }

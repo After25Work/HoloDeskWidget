@@ -14,11 +14,21 @@ import tkinter as tk
 from PIL import Image, ImageDraw, ImageTk
 
 from . import appconfig
-from .config import MIN_BACKGROUND_DARKNESS, TEXT_SCALE_MIN, TEXT_SCALE_MAX
 from .fonts import emoji_font, font
-from .grid_layout import PANEL_INSET
+from .grid_layout import LABEL_PADDING, PANEL_INSET, SEARCH_CLEAR_GAP, SEARCH_ICON_LANE
 from .strings import STRINGS, english_name
 from .theme import KEY_COLOR, MIN_LABEL_SIZE, THEME_PALETTE, THEMES, production_band_color
+
+# Which STRINGS key labels each slider in grid_layout.SLIDER_BLOCKS. Kept
+# beside the drawing code (not in the geometry module) because it is purely
+# about what the slider is called on screen, and looked up by key so
+# _draw_status_and_sliders() can loop over the geometry dict rather than
+# naming each slider a second time.
+SLIDER_LABEL_KEYS = {
+    "background": "bg_slider",
+    "text": "text_slider",
+    "width": "width_slider",
+}
 
 # Ranges covering the emoji live-stream titles actually use (pictographs,
 # symbols/dingbats, regional-indicator flags) plus the modifiers that glue
@@ -67,8 +77,15 @@ class RenderingMixin:
         # O(N^2) one across a few hundred talents, on every ~60ms ticker tick.
         targets = self.targets
         states = self.states
-        live_titles = self.live_titles if self.live_only else {}
-        self._draw_status_and_sliders(draw, colors, targets, states)
+        # Merged only in the title view (live-only, or a title query typed --
+        # see show_titles): the plain grid neither draws a now-playing ticker
+        # nor filters on titles, so it never has to pay for the "All" tab's
+        # merge. A query can only be active while show_titles is True, so this
+        # one dict serves both the ticker text and every row-visibility test
+        # below.
+        live_titles = self.live_titles if self.show_titles else {}
+        self._draw_status_and_sliders(draw, colors, targets, states, live_titles)
+        self._draw_search_row(draw, colors)
         grid_layout, row_height, pending_tickers = self._draw_grid_rows(
             draw, colors, targets, states, live_titles)
         self._update_and_draw_tickers(image, colors, pending_tickers)
@@ -88,6 +105,10 @@ class RenderingMixin:
             else:
                 self.focus_index = None
         self.apply_image(image)
+        # After apply_image(), which is what creates self.surface on the very
+        # first render -- the filter entry has to be created after it to stack
+        # above it (see search.py).
+        self.sync_search_entry()
 
     def _draw_top_bar(self, draw, colors, accent, btn):
         draw.rounded_rectangle(
@@ -127,7 +148,7 @@ class RenderingMixin:
     def _draw_tabs(self, draw, colors, accent):
         tabs = self.production_tabs()
         for tab in tabs:
-            rect = (tab["x"], tab["y"], tab["x"] + tab["w"], tab["y"] + tab["h"])
+            rect = tab["rect"]
             active = tab["id"] == self.active_production
             tab_fill = accent if active else self.tint(colors["neutral_btn"]) + (255,)
             tab_text = self.text_color((24, 24, 31)) if active else self.text_color(colors["text"])
@@ -141,13 +162,23 @@ class RenderingMixin:
                 "copy_name": None, "copy_title": None,
             }
 
-    def _draw_status_and_sliders(self, draw, colors, targets, states):
+    def _draw_status_and_sliders(self, draw, colors, targets, states, titles):
         live_count = sum(state == "live" for state in states.values())
         status_top, status_bottom = self.status_bar_top(), self.status_bar_bottom()
         draw.rounded_rectangle((38, status_top, self.width - 38, status_bottom), 8,
                                fill=self.background_color(colors["status_bg"]))
         count_font = font(12, True)
-        count_text = self.t("count", live=live_count, total=len(targets))
+        if self.title_query:
+            # "N of the whole roster" stops being the useful number the moment
+            # a filter hides most of it -- while one is active this reports how
+            # many rows the query actually left on screen instead, counted
+            # through the same row_visible() predicate that decides which rows
+            # get laid out, so the two can't disagree.
+            match_count = sum(1 for name, _slug, _url, _unit in targets
+                              if self.row_visible(name, states[name], titles))
+            count_text = self.t("count_filtered", shown=match_count, live=live_count)
+        else:
+            count_text = self.t("count", live=live_count, total=len(targets))
         draw.text((50, self.vcenter_y(count_font, count_text, status_top, status_bottom)),
                   count_text, font=count_font, fill=self.text_color(colors["text"]))
         legend_font = font(10, True)
@@ -165,24 +196,65 @@ class RenderingMixin:
             cursor -= label_width
             draw.text((cursor, legend_y), label, font=legend_font, fill=self.text_color(color))
             cursor -= 14
-        sliders = self.slider_geometry()
-        # "濃さ" (darkness) is opacity, the inverse of background_alpha: it rises to
-        # the right, so the displayed percent and the knob both increase with the drag.
-        # The knob fraction is renormalized across MIN_BACKGROUND_DARKNESS..1.0 so the
-        # full track is used even though darkness never actually reaches 0%.
-        background_darkness = 1.0 - self.background_alpha
-        knob_fraction = ((background_darkness - MIN_BACKGROUND_DARKNESS)
-                         / (1.0 - MIN_BACKGROUND_DARKNESS))
-        bg = sliders["background"]
-        self.draw_slider(draw, bg["x"], bg["y"], self.t("bg_slider"), background_darkness * 100,
-                         knob_fraction, bg["track_start"], bg["track_end"], colors)
-        # Text size is a separate user preference from grid_scale (which only
-        # auto-shrinks to keep the no-scroll grid fitting the window): it just
-        # multiplies the resulting label/divider font sizes below.
-        text_fraction = (self.text_scale - TEXT_SCALE_MIN) / (TEXT_SCALE_MAX - TEXT_SCALE_MIN)
-        txt = sliders["text"]
-        self.draw_slider(draw, txt["x"], txt["y"], self.t("text_slider"), self.text_scale * 100,
-                         text_fraction, txt["track_start"], txt["track_end"], colors)
+        # Every slider draws from the same range/value pair interaction.py
+        # operates it with (slider_range()/slider_value()/slider_fraction()),
+        # so the knob position and the percent shown can never disagree with
+        # what a drag or a keyboard Left/Right actually sets:
+        #   - "背景濃さ"/BG is darkness, the inverse of background_alpha, so it
+        #     rises to the right like the others; its fraction is renormalized
+        #     across MIN_BACKGROUND_DARKNESS..1.0 so the full track is usable
+        #     even though darkness never actually reaches 0%.
+        #   - "サイズ"/Text is a user preference separate from grid_scale
+        #     (which only auto-shrinks to keep the no-scroll grid fitting the
+        #     window): it just multiplies the label/divider font sizes below.
+        #   - "幅"/Width is the column-pitch and name-lane multiplier -- see
+        #     GridMixin.target_col_width() and label_area_w below.
+        for key, geometry in self.slider_geometry().items():
+            self.draw_slider(draw, geometry["x"], geometry["y"], self.t(SLIDER_LABEL_KEYS[key]),
+                             self.slider_value(key) * 100, self.slider_fraction(key),
+                             geometry["track_start"], geometry["track_end"], colors)
+
+    def _draw_search_row(self, draw, colors):
+        # The box the native filter entry is placed into (search.py positions
+        # the widget itself against this same rect), plus the magnifier that
+        # marks it as a search field and, to its right, either the hint text or
+        # a clear button -- both occupy the same slot, so the row never changes
+        # shape as a query is typed and cleared.
+        box = self.search_box_rect()
+        draw.rounded_rectangle(box, 8, fill=self.background_color(colors["status_bg"]))
+        self._draw_search_icon(draw, box, colors)
+        if self.title_query:
+            clear_rect = self.search_clear_rect()
+            draw.rounded_rectangle(clear_rect, 7, fill=self.tint(colors["neutral_btn"]) + (255,))
+            self.draw_centered(draw, clear_rect, "×", font(14, True),
+                               self.text_color(colors["text"]))
+            # Registered like any other row so the shared hover machinery gives
+            # it a hand cursor and a tooltip naming what it does -- click()
+            # hit-tests search_clear_rect() itself.
+            self.row_info[("search_clear", "")] = {
+                "rect": clear_rect, "clickable": True,
+                "tooltip": self.t("clear_filter"),
+                "copy_name": None, "copy_title": None,
+            }
+        else:
+            hint_font = font(11, True)
+            hint = self.t("search_hint")
+            draw.text((box[2] + SEARCH_CLEAR_GAP,
+                       self.vcenter_y(hint_font, hint, box[1], box[3])),
+                      hint, font=hint_font, fill=self.text_color(colors["muted"]))
+
+    def _draw_search_icon(self, draw, box, colors):
+        # A plain circle-and-handle magnifier in the box's left lane (see
+        # grid_layout.SEARCH_ICON_LANE, which is the room the entry leaves for
+        # it), drawn rather than typed as a glyph so it doesn't depend on the
+        # user-selected font family having one.
+        color = self.text_color(colors["muted"])
+        cx = box[0] + SEARCH_ICON_LANE / 2 + 2
+        cy = (box[1] + box[3]) / 2 - 1
+        radius = 4
+        draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), outline=color, width=2)
+        draw.line((cx + radius - 1, cy + radius - 1, cx + radius + 3, cy + radius + 3),
+                  fill=color, width=2)
 
     def _draw_grid_rows(self, draw, colors, targets, states, live_titles):
         # No scroll support: instead of dropping rows that don't fit, compute_grid()
@@ -190,7 +262,12 @@ class RenderingMixin:
         # targets/states were already merged in render() for the status bar/talent
         # loop -- passed straight through so compute_grid() doesn't re-merge them
         # a second time on the "All" tab (see the note in compute_grid() itself).
-        grid_layout, row_height, divider_height, grid_scale = self.compute_grid(targets, states)
+        # live_titles is threaded through too, not just targets/states: on the
+        # "All" tab it is another _merge_all_slots() pass, and compute_grid()
+        # needs it to apply the title filter -- letting it re-merge here would
+        # repeat that work on every ~60ms ticker tick.
+        grid_layout, row_height, divider_height, grid_scale = self.compute_grid(
+            targets, states, live_titles)
         # The clock category is always present, so an empty-state message is
         # judged on talent rows specifically, not on grid_layout being empty.
         # A production with zero talents at all (e.g. a freshly-empty
@@ -199,6 +276,12 @@ class RenderingMixin:
         has_talent_row = any(item["type"] == "talent" for item in grid_layout)
         if not targets:
             empty_text = self.t("no_talents")
+        elif not has_talent_row and self.title_query:
+            # Checked before the live-only message: with a query typed, "no
+            # one is live right now" would be the wrong explanation for an
+            # empty list even when the live-only filter is also on -- what the
+            # user changed last, and can undo, is the query.
+            empty_text = self.t("no_match")
         elif self.live_only and not has_talent_row:
             empty_text = self.t("no_live")
         else:
@@ -263,7 +346,7 @@ class RenderingMixin:
                 # grid can share one font size instead of each entry
                 # shrinking independently to fit its own column — see the
                 # matching note by the talent grid's shared_label_size.
-                clock_entries.append({"item": item, "max_label_width": item["w"] - 12})
+                clock_entries.append({"item": item, "max_label_width": item["w"] - LABEL_PADDING})
                 continue
             x, y = item["x"], item["y"]
             name, slug, _, _ = targets[item["index"]]
@@ -275,17 +358,24 @@ class RenderingMixin:
             # state=="live" explicitly (not just self.live_only) so this
             # can't silently mis-color a row if that filter's behavior ever
             # changes.
-            color = (colors["text"] if self.live_only and state == "live"
+            color = (colors["text"] if self.show_titles and state == "live"
                      else colors["live"] if state == "live"
                      else colors["error"] if state == "error" else colors["muted"])
             bullet, display_name = self.talent_bullet_and_display_name(name, slug, state, self.lang)
             label = bullet + display_name
-            # In the live-only view every row is one talent wide, so the name
-            # only needs a modest fixed-width lane — the rest of the row goes
-            # to the now-playing ticker built below.
-            title = live_titles.get(name) if self.live_only else None
-            label_area_w = min(item["w"] * 0.4, max(90, 170 * label_scale)) if title else item["w"]
-            max_label_width = label_area_w - 12
+            # In the title view every row is one talent wide, so the name only
+            # needs a modest lane — the rest of the row goes to the
+            # now-playing ticker built below. That lane used to be a fixed
+            # 40%-of-the-row / 170px pair; both halves now move with the width
+            # slider (column_scale), which is what lets the user trade name
+            # room against title room without resizing the window. The
+            # proportional cap is held at 0.75 so the widest setting still
+            # leaves a usable ticker lane rather than squeezing it to nothing.
+            title = live_titles.get(name) if self.show_titles else None
+            label_area_w = (min(item["w"] * min(0.75, 0.4 * self.column_scale),
+                                max(90, 170 * label_scale) * self.column_scale)
+                            if title else item["w"])
+            max_label_width = label_area_w - LABEL_PADDING
             # Drawing is deferred to a second pass below (once every label's
             # own max_label_width is known) so the whole grid can share one
             # font size instead of each name shrinking independently to fit
@@ -348,15 +438,25 @@ class RenderingMixin:
                 [(e["label"], e["max_label_width"]) for e in sizing_entries],
                 base_label_size, min_label_size)
         # The now-playing ticker should start at the same x on every row
-        # instead of wherever each row's own name happens to end, so every
-        # row with a title shares one label-lane width — wide enough for the
-        # widest of those names (so none of them get truncated either, same
-        # as the no-abbreviation goal below) — rather than each row's ticker
-        # starting at a different x depending on that row's own name length.
+        # instead of wherever each row's own name happens to end, so every row
+        # with a title shares one label-lane width. That width is the wider of:
+        #   - what the width slider asked for (label_area_w above) -- the half
+        #     that makes the name/title split adjustable at all, instead of the
+        #     fixed 40%/170px lane it used to be pinned to; and
+        #   - what the widest of those names actually needs at the size about
+        #     to be drawn, so giving the ticker a bigger share can never come
+        #     out of an ellipsized name (the no-abbreviation goal below).
+        # ...and then capped at the row itself, for a name too long for even
+        # that. At column_scale 1.0 the requested width is exactly the 170px/
+        # 40% pair this lane was fixed at before the slider existed.
         title_entries = [e for e in talent_entries if e["title"]]
-        shared_title_label_area_w = max(
-            (min(e["item"]["w"], self._label_width(e["label"], shared_label_size, True) + 12)
-             for e in title_entries), default=None)
+        shared_title_label_area_w = None
+        if title_entries:
+            snug_width = max(self._label_width(e["label"], shared_label_size, True) + LABEL_PADDING
+                             for e in title_entries)
+            requested_width = max(e["label_area_w"] for e in title_entries)
+            shared_title_label_area_w = min(min(e["item"]["w"] for e in title_entries),
+                                            max(snug_width, requested_width))
         for e in talent_entries:
             item, x, y, name, color, label, display_name, title, label_area_w, max_label_width = (
                 e["item"], e["x"], e["y"], e["name"], e["color"], e["label"], e["display_name"],
@@ -369,7 +469,7 @@ class RenderingMixin:
                 # built, so the name isn't truncated and every ticker still
                 # lines up at the same x.
                 label_area_w = shared_title_label_area_w
-                max_label_width = label_area_w - 12
+                max_label_width = label_area_w - LABEL_PADDING
             fitted_label, label_font = self._fit_label(label, shared_label_size, shared_label_size,
                                                         max_label_width)
             # Vertically centered within the row (rather than drawn flush to
