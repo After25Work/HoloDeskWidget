@@ -62,6 +62,12 @@ class MenuMixin:
         win.configure(bg=bg)
         return win
 
+    def _build_submenu(self, parent_menu, colors):
+        # Every submenu show_context_menu() builds (lang/productions/font)
+        # shares this same shape -- factored out so the three call sites
+        # can't drift apart on tearoff/colors.
+        return tk.Menu(parent_menu, tearoff=0, **self._menu_colors(colors))
+
     def _toggle_popup(self, attr_name, open_fn):
         if getattr(self, attr_name) is not None:
             self._close_popup(attr_name)
@@ -120,6 +126,33 @@ class MenuMixin:
     def toggle_font_menu(self):
         self._toggle_popup("font_win", self.open_font_menu)
 
+    def _build_font_picker_widgets(self, win, panel_hex, text_hex, muted_hex, accent_hex):
+        # Widget construction for open_font_menu() below, split out purely to
+        # keep that method's search/commit/focus-out behavior wiring
+        # readable on its own.
+        hint = tk.Label(win, text=self.t("font_hint"), bg=panel_hex, fg=muted_hex,
+                        font=FONT_UI_SMALL_BOLD, anchor="w")
+        hint.grid(row=0, column=0, sticky="we", padx=8, pady=(6, 2))
+        search_var = tk.StringVar()
+        entry = tk.Entry(win, textvariable=search_var, bg=panel_hex, fg=text_hex,
+                         insertbackground=text_hex, relief="flat",
+                         highlightthickness=1, highlightbackground=muted_hex,
+                         highlightcolor=accent_hex, font=FONT_UI_REGULAR)
+        entry.grid(row=1, column=0, sticky="we", padx=8, pady=(0, 4))
+        list_frame = tk.Frame(win, bg=panel_hex)
+        list_frame.grid(row=2, column=0, padx=8, pady=(0, 8))
+        scrollbar = tk.Scrollbar(list_frame)
+        scrollbar.pack(side="right", fill="y")
+        listbox = tk.Listbox(
+            list_frame, bg=panel_hex, fg=text_hex, selectbackground=accent_hex,
+            selectforeground=_ACCENT_TEXT_COLOR, activestyle="none", highlightthickness=0,
+            borderwidth=0, font=FONT_UI_REGULAR, width=30, height=10,
+            yscrollcommand=scrollbar.set, exportselection=False,
+        )
+        listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=listbox.yview)
+        return search_var, entry, listbox
+
     def open_font_menu(self):
         # Same overrideredirect-Toplevel-anchored-under-its-button pattern as
         # open_palette() above, but backed by a search box + scrollable
@@ -142,27 +175,8 @@ class MenuMixin:
         # the widget's own display text.
         current_matches = []
 
-        hint = tk.Label(win, text=self.t("font_hint"), bg=panel_hex, fg=muted_hex,
-                        font=FONT_UI_SMALL_BOLD, anchor="w")
-        hint.grid(row=0, column=0, sticky="we", padx=8, pady=(6, 2))
-        search_var = tk.StringVar()
-        entry = tk.Entry(win, textvariable=search_var, bg=panel_hex, fg=text_hex,
-                         insertbackground=text_hex, relief="flat",
-                         highlightthickness=1, highlightbackground=muted_hex,
-                         highlightcolor=accent_hex, font=FONT_UI_REGULAR)
-        entry.grid(row=1, column=0, sticky="we", padx=8, pady=(0, 4))
-        list_frame = tk.Frame(win, bg=panel_hex)
-        list_frame.grid(row=2, column=0, padx=8, pady=(0, 8))
-        scrollbar = tk.Scrollbar(list_frame)
-        scrollbar.pack(side="right", fill="y")
-        listbox = tk.Listbox(
-            list_frame, bg=panel_hex, fg=text_hex, selectbackground=accent_hex,
-            selectforeground=_ACCENT_TEXT_COLOR, activestyle="none", highlightthickness=0,
-            borderwidth=0, font=FONT_UI_REGULAR, width=30, height=10,
-            yscrollcommand=scrollbar.set, exportselection=False,
-        )
-        listbox.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=listbox.yview)
+        search_var, entry, listbox = self._build_font_picker_widgets(
+            win, panel_hex, text_hex, muted_hex, accent_hex)
 
         def refresh_list(*_args):
             query = search_var.get().casefold()
@@ -368,7 +382,7 @@ class MenuMixin:
         menu.add_command(label=self.t("dark_mode") if self.dark_mode else self.t("light_mode"),
                          command=self.toggle_mode)
         menu.add_separator()
-        lang_menu = tk.Menu(menu, tearoff=0, **self._menu_colors(colors))
+        lang_menu = self._build_submenu(menu, colors)
         # Plain commands with a "✓ " prefix on the active language, not
         # radiobuttons — same invisible-indicator issue as pin/live_only above.
         lang_menu.add_command(label=self._checked_label(self.t("lang_ja"), self.lang == "ja"),
@@ -382,7 +396,7 @@ class MenuMixin:
         # exist for it rather than showing one permanently-checked,
         # can't-be-unchecked entry.
         if self.has_multiple_productions():
-            productions_menu = tk.Menu(menu, tearoff=0, **self._menu_colors(colors))
+            productions_menu = self._build_submenu(menu, colors)
             # Same enable/disable-all shortcut as open_productions_menu()'s
             # checklist popup, plus a "✓ " plain-command convention as
             # pin/live_only/lang above, one entry per production (mirrors that
@@ -401,7 +415,7 @@ class MenuMixin:
                                              command=lambda pid=prod_id: self.toggle_production(pid))
             menu.add_cascade(label=self.t("productions_button"), menu=productions_menu)
         menu.add_command(label=self.t("theme_color"), command=self.open_palette)
-        font_menu = tk.Menu(menu, tearoff=0, **self._menu_colors(colors))
+        font_menu = self._build_submenu(menu, colors)
         # Same "✓ " plain-command convention as pin/live_only/lang/productions
         # above, one entry per Japanese-capable installed font (mirrors
         # open_font_menu()'s list) so the switch is reachable without the top
@@ -448,6 +462,35 @@ class MenuMixin:
             summary += "  " + " / ".join(f"{name} x{count}" for (_, name), count in top)
         return summary
 
+    def _populate_history_list(self, listbox, events):
+        # Builds each event's display line (and, for a multi-production
+        # variant, its production-name prefix) and inserts it into listbox,
+        # returning the per-row URL list (None where a row has none) that
+        # open_selected_url() below indexes back into on double-click. Split
+        # out of open_history_window() purely to keep that method's window/
+        # widget setup separate from this per-event formatting.
+        multi = self.has_multiple_productions()
+        event_urls = []
+        for event in events:
+            timestamp = time.strftime("%m/%d %H:%M:%S", time.localtime(event.get("ts", 0)))
+            production = self._productions_by_id.get(event.get("production_id"))
+            prod_prefix = f"[{production_display_name(production, self.lang)}] " if multi and production else ""
+            name = event.get("name", "?")
+            url = None
+            if event.get("event") == "start":
+                title = event.get("title")
+                suffix = f" - {title}" if title else ""
+                url = event.get("url")
+                url_suffix = f"  {url}" if url else ""
+                line = f"{timestamp}  {prod_prefix}{name}  ● {self.t('stream_start')}{suffix}{url_suffix}"
+            else:
+                line = f"{timestamp}  {prod_prefix}{name}  ○ {self.t('stream_end')}"
+            listbox.insert(tk.END, line)
+            event_urls.append(url)
+        if not events:
+            listbox.insert(tk.END, self.t("stream_history_empty"))
+        return event_urls
+
     def open_history_window(self):
         # A plain (OS-decorated) Toplevel rather than this file's usual
         # overrideredirect-popup pattern: this is a scrollable content window
@@ -487,26 +530,7 @@ class MenuMixin:
         listbox.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=listbox.yview)
 
-        multi = self.has_multiple_productions()
-        event_urls = []
-        for event in events:
-            timestamp = time.strftime("%m/%d %H:%M:%S", time.localtime(event.get("ts", 0)))
-            production = self._productions_by_id.get(event.get("production_id"))
-            prod_prefix = f"[{production_display_name(production, self.lang)}] " if multi and production else ""
-            name = event.get("name", "?")
-            url = None
-            if event.get("event") == "start":
-                title = event.get("title")
-                suffix = f" - {title}" if title else ""
-                url = event.get("url")
-                url_suffix = f"  {url}" if url else ""
-                line = f"{timestamp}  {prod_prefix}{name}  ● {self.t('stream_start')}{suffix}{url_suffix}"
-            else:
-                line = f"{timestamp}  {prod_prefix}{name}  ○ {self.t('stream_end')}"
-            listbox.insert(tk.END, line)
-            event_urls.append(url)
-        if not events:
-            listbox.insert(tk.END, self.t("stream_history_empty"))
+        event_urls = self._populate_history_list(listbox, events)
 
         def open_selected_url(_event):
             index = listbox.nearest(_event.y)

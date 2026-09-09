@@ -2,6 +2,7 @@ import ctypes
 import time
 
 from .paths import SW_RESTORE, WINDOW_TITLE
+from .win32 import bind, kernel32 as _kernel32, user32 as _user32
 
 # Derived from WINDOW_TITLE (not a bare fixed string) so a sibling app built
 # from the same codebase under a different name -- e.g. VTDeskWidget, whose
@@ -17,17 +18,12 @@ _MUTEX_NAME = f"{WINDOW_TITLE}-native-single-instance"
 _RETRY_TIMEOUT_SECONDS = 2.0
 _RETRY_INTERVAL_SECONDS = 0.1
 
-_user32 = ctypes.WinDLL("user32", use_last_error=True)
-_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-_user32.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
-_user32.FindWindowW.restype = ctypes.c_void_p
-_user32.ShowWindow.argtypes = [ctypes.c_void_p, ctypes.c_int]
-_user32.SetForegroundWindow.argtypes = [ctypes.c_void_p]
-_user32.SetForegroundWindow.restype = ctypes.c_bool
-_kernel32.CreateMutexW.restype = ctypes.c_void_p
-_kernel32.GetLastError.restype = ctypes.c_uint32
-_kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-_kernel32.CloseHandle.restype = ctypes.c_bool
+bind(_user32.FindWindowW, [ctypes.c_wchar_p, ctypes.c_wchar_p], ctypes.c_void_p)
+bind(_user32.ShowWindow, [ctypes.c_void_p, ctypes.c_int], ctypes.c_int)
+bind(_user32.SetForegroundWindow, [ctypes.c_void_p], ctypes.c_bool)
+bind(_kernel32.CreateMutexW, None, ctypes.c_void_p)
+bind(_kernel32.GetLastError, None, ctypes.c_uint32)
+bind(_kernel32.CloseHandle, [ctypes.c_void_p], ctypes.c_bool)
 
 
 def _create_mutex():

@@ -26,6 +26,7 @@ import threading
 from ctypes import wintypes
 
 from .paths import WINDOW_TITLE, log_error
+from .win32 import bind as _bind, kernel32 as _kernel32, user32 as _user32
 
 WM_DESTROY = 0x0002
 WM_NULL = 0x0000
@@ -126,15 +127,7 @@ class _MSG(ctypes.Structure):
     ]
 
 
-_user32 = ctypes.WinDLL("user32", use_last_error=True)
 _shell32 = ctypes.WinDLL("shell32", use_last_error=True)
-_kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-
-
-def _bind(func, argtypes, restype):
-    func.argtypes = argtypes
-    func.restype = restype
-
 
 _bind(_user32.DefWindowProcW, [wintypes.HWND, ctypes.c_uint, wintypes.WPARAM, wintypes.LPARAM], LRESULT)
 _bind(_user32.RegisterClassW, [ctypes.POINTER(_WNDCLASSW)], wintypes.ATOM)

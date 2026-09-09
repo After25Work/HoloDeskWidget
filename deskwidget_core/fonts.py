@@ -299,10 +299,6 @@ def set_font_family(name):
         font.cache_clear()
 
 
-def get_font_family():
-    return _current_family_name
-
-
 @functools.lru_cache(maxsize=None)
 def _font_paths(bold):
     # Resolved once per bold value (there are only two) instead of inside
