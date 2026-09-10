@@ -796,10 +796,23 @@ class GridMixin:
         # touching any of the other fields, so leaving it out would let a
         # drag's own render() call reuse a pre-drag cached layout.
         column_widths_key = tuple(self.column_widths) if self.column_widths is not None else None
+        # The world clock's displayed text is baked into layout_items below
+        # (see _layout_clock_section()), but none of the fields above ever
+        # change on their own between one wall-clock second and the next --
+        # so without this, a quiet render (nothing resized/rescaled/went
+        # live) would keep hitting the cache and the clock would freeze at
+        # whatever it read the last time something else invalidated it,
+        # instead of advancing every second the way tick_clock()'s own
+        # once-a-second request_render() calls are meant to make it. Bucketed
+        # to whole seconds (not the raw float) so it still collapses the
+        # dozens of renders a live-only ticker's ~60ms cadence fires within
+        # any one second down to a single recompute, same as every other key
+        # field here.
+        clock_second = int(time.time())
         cache_key = (self.width, self.height, self.text_scale, self.column_scale,
                      self.live_only, self._title_query_folded,
                      tuple(targets), tuple(sorted(states.items())), titles_key,
-                     column_widths_key)
+                     column_widths_key, clock_second)
         cached = getattr(self, "_grid_cache", None)
         if cached is not None and cached[0] == cache_key:
             return cached[1]

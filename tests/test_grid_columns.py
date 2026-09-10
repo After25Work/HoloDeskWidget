@@ -217,6 +217,27 @@ def test_effective_column_fractions_falls_back_to_equal_split():
 
     widget.column_widths = [0.2, 0.3, 0.5]
     assert widget._effective_column_fractions(3) == [0.2, 0.3, 0.5]
+
+
+def test_world_clock_text_still_advances_when_nothing_else_about_the_layout_changed(monkeypatch):
+    # compute_grid() memoizes the layout it last computed (see cache_key) so a
+    # live-only ticker's ~60ms renders don't redo the whole column search when
+    # nothing about the roster/window changed -- but the clock section's text
+    # is baked into that same cached result, and none of the cache-key fields
+    # depend on the current time. tick_clock() calls request_render() once a
+    # second specifically to keep the clock moving even when nothing else on
+    # screen does, so a quiet render (every other input unchanged) must still
+    # show it advance.
+    widget = FakeGrid(talents=5, width=1600, height=900)
+    monkeypatch.setattr(grid_layout.time, "time", lambda: 1_700_000_000.0)
+    layout_items, *_ = widget.compute_grid()
+    first_texts = [item["text"] for item in layout_items if item["type"] == "clock"]
+
+    monkeypatch.setattr(grid_layout.time, "time", lambda: 1_700_000_061.0)
+    layout_items, *_ = widget.compute_grid()
+    second_texts = [item["text"] for item in layout_items if item["type"] == "clock"]
+
+    assert second_texts != first_texts
     # Sized for the wrong column count -- ignored, same as a stale drag after
     # a resize (see test_column_widths_reset_to_equal_when_the_column_count_changes).
     assert widget._effective_column_fractions(4) == pytest.approx([0.25] * 4)

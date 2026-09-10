@@ -210,13 +210,21 @@ class RenderingMixin:
         #     (which only auto-shrinks to keep the no-scroll grid fitting the
         #     window): it just multiplies the label/divider font sizes below.
         #   - "幅"/Width is the plain grid's column-pitch multiplier -- see
-        #     GridMixin.target_col_width().
+        #     GridMixin.target_col_width(). It has nothing to act on in the
+        #     title view (grid_col_width() uses the fixed TITLE_COL_WIDTH
+        #     there instead -- column width is set by dragging a column
+        #     boundary directly), so it draws dimmed there rather than
+        #     staying full-color while silently doing nothing when dragged.
         #   - "名前幅"/Name is the title view's name-lane multiplier, i.e. the
-        #     name/title split -- see label_area_w below.
+        #     name/title split -- see label_area_w below. Its own value is
+        #     read from `title = live_titles.get(name) if self.show_titles
+        #     else None` there, so it's the plain grid's turn to dim: this one
+        #     only ever moves anything while show_titles is True.
         for key, geometry in self.slider_geometry().items():
+            active = self.show_titles if key == "name" else not self.show_titles if key == "width" else True
             self.draw_slider(draw, geometry["x"], geometry["y"], self.t(SLIDER_LABEL_KEYS[key]),
                              self.slider_value(key) * 100, self.slider_fraction(key),
-                             geometry["track_start"], geometry["track_end"], colors)
+                             geometry["track_start"], geometry["track_end"], colors, active=active)
 
     def _draw_search_row(self, draw, colors):
         # The box the native filter entry is placed into (search.py positions
@@ -905,13 +913,26 @@ class RenderingMixin:
         return self.tint(color[:3])
 
     def draw_slider(self, draw, x, y, label, display_percent, knob_fraction, track_start, track_end,
-                     colors):
+                     colors, active=True):
+        # `active` marks a slider that has nothing to act on in the CURRENT
+        # view -- width/column-pitch in the title view, name/title split in
+        # the plain grid (see _draw_status_and_sliders' note on the two being
+        # each other's opposite) -- rather than a value it can't currently
+        # reach. Still fully draggable either way: the value is a per-view
+        # setting that keeps meaning something the moment the user switches
+        # views, so there's no reason to block setting it early. Dimmed to
+        # the same muted color the legend/hint text already uses for
+        # "present but not the point right now", so a user dragging it and
+        # seeing nothing move reads this as "wrong control for this view"
+        # instead of "broken".
+        label_color = self.text_color(colors["text"] if active else colors["muted"])
+        knob_color = self.accent_color() if active else self.text_color(colors["muted"]) + (255,)
         draw.text((x, y), f"{label} {round(display_percent)}%", font=font(10, True),
-                  fill=self.text_color(colors["text"]))
+                  fill=label_color)
         draw.rounded_rectangle((track_start, y + 3, track_end, y + 9), 3, fill=colors["divider"])
         knob = track_start + int((track_end - track_start) * knob_fraction)
         # Always fully opaque so the knob stays grabbable even at max text transparency.
-        draw.ellipse((knob - 5, y, knob + 5, y + 12), fill=self.accent_color())
+        draw.ellipse((knob - 5, y, knob + 5, y + 12), fill=knob_color)
 
     def accent_color(self):
         return THEME_PALETTE[self.theme_index][1] + (255,)
