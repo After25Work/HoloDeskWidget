@@ -8,7 +8,7 @@ A Windows desktop widget that keeps the live-stream status of hololive talents v
 
 ## Features
 
-- **Live-status overview**: Shows each registered talent's status (live / idle / fetch error) as color-coded cards. Clicking a card copies the talent's name, and clicking the stream title copies the title, to the clipboard.
+- **Live-status overview**: Shows each registered talent's status (live / idle / fetch error) as color-coded cards. Clicking a card opens that talent's live stream in your browser (or their channel page if they're not live). Right-clicking a card brings up a menu to copy the talent's name or stream title to the clipboard.
 - **Always-on-top, semi-transparent desktop widget**: A persistent, transparent window you can drag by its background to move, and drag by its edges/corners to resize.
 - **LIVE filter**: Narrows the list down to only the talents currently live, and shows their stream titles as a scrolling ticker.
 - **Stream-title search (incremental)**: Type in the search box below the sliders and the list narrows to matching stream titles as you type (case-insensitive). While a filter is active each matching talent's stream title is shown beside their name and the status bar switches to a "matched" count. `Ctrl+F` jumps to the box; `Esc` or the × button beside it clears the filter.

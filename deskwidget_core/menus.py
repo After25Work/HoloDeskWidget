@@ -177,8 +177,15 @@ class MenuMixin:
 
         search_var, entry, listbox = self._build_font_picker_widgets(
             win, panel_hex, text_hex, muted_hex, accent_hex)
+        # Restores whatever was typed the last time this popup was open (see
+        # the write below) instead of always starting blank, so re-opening the
+        # picker to fine-tune a choice doesn't mean retyping the same search.
+        if self._font_search_query:
+            search_var.set(self._font_search_query)
+            entry.icursor(tk.END)
 
         def refresh_list(*_args):
+            self._font_search_query = search_var.get()
             query = search_var.get().casefold()
             pairs = [(name, family_display_name(name, self.lang)) for name in all_families]
             matches = ([pair for pair in pairs if query in pair[1].casefold()]

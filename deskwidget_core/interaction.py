@@ -32,6 +32,9 @@ _GRID_HIT_BOTTOM_MARGIN = 85
 _TOOLTIP_DELAY_MS = 450
 _TOOLTIP_OFFSET_X = 16
 _TOOLTIP_OFFSET_Y = 18
+# How long the "Copied" toast (_show_copy_feedback) stays up before
+# self-dismissing.
+_COPY_FEEDBACK_MS = 900
 # Fraction of the slider's full range each keyboard Left/Right press moves.
 _SLIDER_KEY_STEP = 0.05
 # Floor (ms) between the start of one coalesced render and the next, during a
@@ -394,6 +397,38 @@ class InteractionMixin:
     def _copy_to_clipboard(self, text):
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
+        self._show_copy_feedback()
+
+    def _show_copy_feedback(self):
+        # A brief "Copied" toast at the pointer -- the context menu's Copy
+        # Name/Copy Title commands (menus.py) used to give no sign anything
+        # happened, so nothing distinguished a working copy from a click that
+        # silently missed. Reuses the tooltip's own popup shape/colors
+        # (_make_popup_toplevel) but keeps separate window/after-id state
+        # (_copy_feedback_win/_copy_feedback_after) rather than the
+        # tooltip's, so a copy right before/after a hover can't have one
+        # clobber the other's timer or destroy the other's window.
+        self._hide_copy_feedback()
+        colors = self.theme_colors()
+        bg = self._hex(self.tint(colors["neutral_btn"]))
+        win = self._make_popup_toplevel(bg)
+        tk.Label(win, text=self.t("copied"), justify="left", font=FONT_UI_SMALL, padx=8, pady=4,
+                 relief="solid", borderwidth=1, bg=bg, fg=self._hex(colors["text"])).pack()
+        x, y = self.root.winfo_pointerx(), self.root.winfo_pointery()
+        win.geometry(f"+{x + _TOOLTIP_OFFSET_X}+{y + _TOOLTIP_OFFSET_Y}")
+        self._copy_feedback_win = win
+        self._copy_feedback_after = self.root.after(_COPY_FEEDBACK_MS, self._hide_copy_feedback)
+
+    def _hide_copy_feedback(self):
+        if self._copy_feedback_after is not None:
+            self.root.after_cancel(self._copy_feedback_after)
+            self._copy_feedback_after = None
+        if self._copy_feedback_win is not None:
+            try:
+                self._copy_feedback_win.destroy()
+            except tk.TclError:
+                pass
+            self._copy_feedback_win = None
 
     # The slider row's controls, expressed once as range/read/write so
     # pointer drags (update_slider), keyboard Left/Right (adjust_focus_slider)

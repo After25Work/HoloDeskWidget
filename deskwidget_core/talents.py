@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from .paths import ROOT, load_json
+from .paths import ROOT, load_json, log_error
 
 PRODUCTIONS_DIR = ROOT / "productions"
 PRODUCTIONS_INDEX = PRODUCTIONS_DIR / "index.json"
@@ -86,11 +86,19 @@ def load_talents_raw(filename):
 
 
 def load_targets(production):
+    # productions/*.json is meant to be hand-edited (see the READMEs' "talent
+    # list" instructions), so a typo'd/missing required field is logged
+    # instead of just vanishing the talent with no trace anywhere -- a
+    # malformed entry used to fail this same isinstance/key check silently.
     raw = load_talents_raw(production["file"])
-    return [
-        (talent["name"], talent["slug"],
-         talent.get("channel_url", f"https://www.youtube.com/@{talent['slug']}"),
-         talent["unit"])
-        for talent in (raw if isinstance(raw, list) else [])
-        if isinstance(talent, dict) and "name" in talent and "slug" in talent and "unit" in talent
-    ]
+    targets = []
+    for talent in (raw if isinstance(raw, list) else []):
+        if isinstance(talent, dict) and "name" in talent and "slug" in talent and "unit" in talent:
+            targets.append((
+                talent["name"], talent["slug"],
+                talent.get("channel_url", f"https://www.youtube.com/@{talent['slug']}"),
+                talent["unit"]))
+        else:
+            log_error(f"talents:{production['file']}",
+                      ValueError(f"skipped entry missing name/slug/unit: {talent!r}"))
+    return targets

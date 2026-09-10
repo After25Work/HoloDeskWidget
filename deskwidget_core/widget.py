@@ -135,6 +135,11 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # never "attribute doesn't exist yet".
         self.palette_win: Optional[tk.Toplevel] = None
         self.font_win: Optional[tk.Toplevel] = None
+        # What was last typed into the font picker's search box, restored the
+        # next time it's opened (see open_font_menu()) instead of always
+        # starting blank -- kept in memory only, not settings.json, since it's
+        # a within-session convenience, not a persisted preference.
+        self._font_search_query = ""
         self.productions_win: Optional[tk.Toplevel] = None
         self.history_win: Optional[tk.Toplevel] = None
         self.tray: Optional[TrayIcon] = None
@@ -162,6 +167,12 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.tooltip_win: Optional[tk.Toplevel] = None
         self._tooltip_key = None
         self._tooltip_after = None
+        # The "Copied" toast _show_copy_feedback()/_hide_copy_feedback() (see
+        # interaction.py) show after a context-menu clipboard copy -- kept
+        # separate from the tooltip_win/_tooltip_after pair above so the two
+        # popups can never cancel or destroy each other's.
+        self._copy_feedback_win: Optional[tk.Toplevel] = None
+        self._copy_feedback_after = None
         # The "all talents" height fit_height() restores when live_only is
         # switched back off. If settings.json was saved while live_only was
         # already on, there is no real "before" height on record — seed it
@@ -475,15 +486,23 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
     def tick_clock(self):
         # Ticks the "now" clock next to the last-updated timestamp once a
         # second, independent of the 60s data refresh in refresh_complete().
-        self.request_render()
+        # Skipped while withdrawn to the tray -- winfo_viewable() is False for
+        # a withdrawn window, and re-rendering the full panel into a hidden
+        # Label every second only burned CPU for nobody to see. The loop still
+        # reschedules itself unconditionally, so it needs no separate restart
+        # from restore_from_tray(): the very next tick after deiconify()
+        # already sees winfo_viewable() go back to True on its own.
+        if self.root.winfo_viewable():
+            self.request_render()
         self.root.after(1000, self.tick_clock)
 
     def tick_ticker(self):
         # Drives the live-only view's scrolling program-title ticker at a much
         # finer grain than tick_clock()'s 1s cadence, so the scroll reads as
         # smooth motion. Only requests a render when there's actually a ticker
-        # on screen, so this costs nothing while live_only is off.
-        if self.show_titles and self.live_titles:
+        # on screen (and the window is actually visible -- see tick_clock()),
+        # so this costs nothing while live_only is off or minimized to tray.
+        if self.root.winfo_viewable() and self.show_titles and self.live_titles:
             self.request_render()
         self.root.after(60, self.tick_ticker)
 

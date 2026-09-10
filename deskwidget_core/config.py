@@ -24,7 +24,12 @@ WINDOW_ALPHA = 0.78
 MIN_WINDOW_ALPHA = 0.05
 MIN_BACKGROUND_DARKNESS = 0.3
 TEXT_SCALE_MIN = 0.8
-TEXT_SCALE_MAX = 1.0
+# Above 1.0 lets the size slider grow text past whatever compute_grid()'s own
+# auto-fit already picked -- previously capped at 1.0, the slider could only
+# ever shrink text, never enlarge it, even though grid_scale (the auto-fit
+# multiplier it stacks on top of, see rendering.py's label_scale) already
+# freely goes above 1.0 on a roomy window.
+TEXT_SCALE_MAX = 1.3
 # How far the user may widen/narrow the talent grid's column pitch, which
 # grid_layout.TARGET_COL_WIDTH used to hardcode. 1.0 reproduces exactly the
 # pitch it was pinned to before this slider existed, so an existing
