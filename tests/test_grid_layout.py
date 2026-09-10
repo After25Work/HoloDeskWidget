@@ -1,18 +1,28 @@
-"""GridMixin's state-dependent geometry: the slider row (now three sliders
-wide), the title-filter row wedged between it and the grid, and the
-user-adjustable column pitch. Driven through a stub carrying only the handful
-of attributes these particular helpers read, so no Tk window is needed."""
+"""GridMixin's state-dependent geometry: the slider row (which wraps onto
+more rows than one when the window is too narrow to carry every slider side
+by side), the title-filter row wedged between it and the grid, the
+user-adjustable column pitch, and the panel inset fullscreen collapses.
+Driven through a stub carrying only the handful of attributes these
+particular helpers read, so no Tk window is needed."""
 import pytest
 
 from deskwidget_core import grid_layout, layout
 from deskwidget_core.config import COLUMN_SCALE_MAX, COLUMN_SCALE_MIN, MIN_WIDTH
 from deskwidget_core.grid_layout import GridMixin
 
+# Wide enough that every slider block fits on a single row, so the tests
+# about the group's left-to-right packing aren't also testing its wrapping.
+ONE_ROW_WIDTH = 1000
+
 
 class FakeWidget(GridMixin):
-    def __init__(self, width=MIN_WIDTH, column_scale=1.0):
+    def __init__(self, width=MIN_WIDTH, height=600, column_scale=1.0,
+                 show_titles=False, is_fullscreen=False):
         self.width = width
+        self.height = height
         self.column_scale = column_scale
+        self.show_titles = show_titles
+        self.is_fullscreen = is_fullscreen
 
     def has_multiple_productions(self):
         # Collapses the tab strip (and therefore tabs_strip_height()) to zero,
@@ -21,34 +31,68 @@ class FakeWidget(GridMixin):
 
 
 def test_slider_row_carries_every_block_left_to_right_without_overlap():
-    geometry = FakeWidget(width=1000).slider_geometry()
+    geometry = FakeWidget(width=ONE_ROW_WIDTH).slider_geometry()
 
     assert list(geometry) == [key for key, _width in grid_layout.SLIDER_BLOCKS]
     previous_right = None
     for key, block_width in grid_layout.SLIDER_BLOCKS:
         block = geometry[key]
+        assert block["row"] == 0
         assert block["track_start"] == block["x"] + grid_layout.SLIDER_LABEL_OFFSET
         assert block["track_end"] == block["x"] + block_width
         if previous_right is not None:
             assert block["x"] == previous_right + grid_layout.SLIDER_BLOCK_GAP
         previous_right = block["track_end"]
     # The group is right-justified against the panel's right edge.
-    assert previous_right == 1000 - 40
+    assert previous_right == ONE_ROW_WIDTH - 40
 
 
 def test_slider_row_fits_inside_the_panel_at_minimum_width():
     geometry = FakeWidget().slider_geometry()
 
     leftmost = min(block["x"] for block in geometry.values())
-    assert leftmost >= 40
+    assert leftmost >= grid_layout.SLIDER_AREA_LEFT
+
+
+def test_sliders_too_wide_for_one_row_wrap_onto_another():
+    # Four slider blocks no longer fit side by side at MIN_WIDTH; they wrap
+    # rather than run off the panel's left edge (or shrink every track for
+    # every window size to serve the narrowest one).
+    narrow = FakeWidget(width=MIN_WIDTH)
+
+    assert narrow.slider_rows() > 1
+    assert FakeWidget(width=ONE_ROW_WIDTH).slider_rows() == 1
+    # Every wrapped row is still right-justified and inside the panel, and
+    # rows below the first sit lower on screen, never overlapping.
+    by_row = {}
+    for block in narrow.slider_geometry().values():
+        assert block["x"] >= grid_layout.SLIDER_AREA_LEFT
+        assert block["track_end"] <= narrow.width - 40
+        by_row.setdefault(block["row"], []).append(block)
+    for row, blocks in by_row.items():
+        assert max(block["track_end"] for block in blocks) == narrow.width - 40
+        assert blocks[0]["y"] == narrow.slider_row_y() + row * grid_layout.SLIDER_ROW_PITCH
+
+
+def test_wrapped_slider_rows_push_the_search_row_and_grid_down():
+    narrow, wide = FakeWidget(width=MIN_WIDTH), FakeWidget(width=ONE_ROW_WIDTH)
+
+    assert narrow.search_row_y() - narrow.slider_row_y() == pytest.approx(
+        (wide.search_row_y() - wide.slider_row_y())
+        * narrow.slider_rows() / wide.slider_rows())
+    # The bottom slider row still clears the filter field below it.
+    bottom_band = (narrow.slider_row_y()
+                   + (narrow.slider_rows() - 1) * grid_layout.SLIDER_ROW_PITCH
+                   + grid_layout.SLIDER_HIT_PAD_BOTTOM)
+    assert narrow.search_box_rect()[1] > bottom_band
 
 
 def test_adding_the_width_slider_left_the_other_two_where_they_were():
     # SLIDER_BLOCKS is packed right-to-left, so the pre-existing
     # background/text pair must still land on the exact pixels it used to --
     # otherwise every user's muscle memory for those two moves on upgrade.
-    geometry = FakeWidget(width=1000).slider_geometry()
-    content_right = 1000 - 40
+    geometry = FakeWidget(width=ONE_ROW_WIDTH).slider_geometry()
+    content_right = ONE_ROW_WIDTH - 40
 
     assert geometry["text"]["track_end"] == content_right
     assert geometry["background"]["track_end"] == content_right - 124 - 14
@@ -137,6 +181,34 @@ def test_grid_top_cascade_starts_at_the_tab_strip():
     widget = FakeWidget()
 
     assert widget.status_bar_top() == layout.TABS_TOP + grid_layout.TABS_BOTTOM_GAP
-    assert widget.grid_top() == (widget.slider_row_y() + grid_layout.SLIDER_SEARCH_GAP
+    assert widget.grid_top() == (widget.slider_row_y()
+                                 + widget.slider_rows() * grid_layout.SLIDER_ROW_PITCH
                                  + grid_layout.SEARCH_ROW_HEIGHT
                                  + grid_layout.SEARCH_GRID_GAP)
+
+
+def test_title_view_columns_are_wider_than_plain_grid_columns():
+    # A title-view row carries the now-playing ticker beside the name, so it
+    # takes a much wider column before a second one fits -- but it is still a
+    # column count, not the one-full-width-row-per-talent it used to be.
+    assert (FakeWidget(show_titles=True).grid_col_width()
+            > FakeWidget(show_titles=False).grid_col_width())
+    assert FakeWidget(show_titles=True).grid_col_width() == grid_layout.TITLE_COL_WIDTH
+    assert FakeWidget(show_titles=False).grid_col_width() == grid_layout.TARGET_COL_WIDTH
+
+
+def test_fullscreen_collapses_the_panel_inset_and_corner_radius():
+    # Everything outside the drawn panel is transparent, so a floating
+    # widget's inset/rounded corners would show the desktop through the edges
+    # of a window that is meant to be covering the whole screen.
+    floating, full = FakeWidget(), FakeWidget(is_fullscreen=True)
+
+    assert (floating.panel_inset(), floating.panel_radius()) == (
+        grid_layout.PANEL_INSET, grid_layout.PANEL_RADIUS)
+    assert (full.panel_inset(), full.panel_radius()) == (0, 0)
+    # The resize hit-band follows the panel's drawn edge either way: at the
+    # window's literal left edge when fullscreen squares the panel off, and
+    # PANEL_INSET further in while the panel floats.
+    assert full.resize_edge(0, 300) == "w"
+    assert floating.resize_edge(0, 300) is None
+    assert floating.resize_edge(grid_layout.PANEL_INSET, 300) == "w"

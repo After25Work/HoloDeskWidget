@@ -131,10 +131,24 @@ def test_load_settings_clamps_column_scale_to_bounds():
     assert config.load_settings()["column_scale"] == config.COLUMN_SCALE_MIN
 
 
-def test_settings_file_predating_the_width_slider_gets_the_neutral_default():
-    # 1.0 is the value that reproduces the fixed column pitch/name lane the
-    # app had before the width slider existed, so upgrading must not move
-    # anything on an existing user's panel.
+def test_load_settings_clamps_name_scale_to_bounds():
+    config.SETTINGS_PATH.write_text(
+        f'{{"name_scale": {config.NAME_SCALE_MAX + 5}}}', encoding="utf-8")
+
+    assert config.load_settings()["name_scale"] == config.NAME_SCALE_MAX
+
+    config.SETTINGS_PATH.write_text(
+        f'{{"name_scale": {config.NAME_SCALE_MIN - 5}}}', encoding="utf-8")
+
+    assert config.load_settings()["name_scale"] == config.NAME_SCALE_MIN
+
+
+def test_settings_file_predating_the_width_sliders_gets_the_neutral_defaults():
+    # 1.0 is the value that reproduces the fixed column pitch (column_scale)
+    # and the fixed name/title split (name_scale) the app had before those
+    # two sliders existed, so upgrading must not move anything on an existing
+    # user's panel.
     config.SETTINGS_PATH.write_text('{"lang": "en"}', encoding="utf-8")
 
     assert config.load_settings()["column_scale"] == 1.0
+    assert config.load_settings()["name_scale"] == 1.0

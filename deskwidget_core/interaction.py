@@ -15,6 +15,8 @@ from .config import (
     MIN_HEIGHT,
     MIN_WIDTH,
     MIN_WINDOW_ALPHA,
+    NAME_SCALE_MAX,
+    NAME_SCALE_MIN,
     TEXT_SCALE_MAX,
     TEXT_SCALE_MIN,
 )
@@ -92,9 +94,9 @@ class InteractionMixin:
             # A manual resize means the window is no longer "fullscreen" in
             # any tracked sense -- drop the flag (and the now-meaningless
             # restore point) so the button's icon and close()'s saved size
-            # both reflect what's actually on screen.
-            self.is_fullscreen = False
-            self._pre_fullscreen = None
+            # both reflect what's actually on screen, and so the topmost bit
+            # fullscreen forced on goes back to following the pin button.
+            self.leave_fullscreen_state()
             self.resize_drag = True
             self.active_resize_edge = edge
             self.resize_origin = (event.x_root, event.y_root, self.width, self.height,
@@ -134,6 +136,14 @@ class InteractionMixin:
             return
         if self.drag_origin is not None:
             sx, sy, x, y = self.drag_origin
+            if self.is_fullscreen:
+                # Dragging the panel off the screen it was filling ends
+                # fullscreen for the same reason a manual resize does (see
+                # drag_start): whatever it covers now, it is no longer "this
+                # screen, only this app". Re-rendered so the panel picks its
+                # floating inset/rounded corners back up right away.
+                self.leave_fullscreen_state()
+                self.request_render()
             self.root.geometry(f"+{x + event.x_root - sx}+{y + event.y_root - sy}")
 
     def request_render(self):
@@ -319,10 +329,10 @@ class InteractionMixin:
         self.root.clipboard_clear()
         self.root.clipboard_append(text)
 
-    # The three slider row controls, expressed once as range/read/write so
+    # The slider row's controls, expressed once as range/read/write so
     # pointer drags (update_slider), keyboard Left/Right (adjust_focus_slider)
     # and the slider drawing in rendering.py all share one definition of what
-    # each slider's value means. Adding a fourth slider is then a matter of
+    # each slider's value means. Adding another slider is then a matter of
     # naming it in grid_layout.SLIDER_BLOCKS and adding a branch to these
     # three, rather than a set_*_from_pointer() plus a keyboard branch plus a
     # bespoke draw call that can each drift from the others.
@@ -330,11 +340,13 @@ class InteractionMixin:
     def slider_range(key):
         if key == "background":
             # Darkness (the inverse of background_alpha) rather than the alpha
-            # itself, so the value rises to the right like the other two and
+            # itself, so the value rises to the right like the others and
             # the whole track maps onto the range darkness can actually take.
             return MIN_BACKGROUND_DARKNESS, 1.0
         if key == "text":
             return TEXT_SCALE_MIN, TEXT_SCALE_MAX
+        if key == "name":
+            return NAME_SCALE_MIN, NAME_SCALE_MAX
         return COLUMN_SCALE_MIN, COLUMN_SCALE_MAX
 
     def slider_value(self, key):
@@ -342,6 +354,8 @@ class InteractionMixin:
             return 1.0 - self.background_alpha
         if key == "text":
             return self.text_scale
+        if key == "name":
+            return self.name_scale
         return self.column_scale
 
     def set_slider_value(self, key, value):
@@ -352,6 +366,8 @@ class InteractionMixin:
             self._apply_background_alpha()
         elif key == "text":
             self.text_scale = value
+        elif key == "name":
+            self.name_scale = value
         else:
             self.column_scale = value
 

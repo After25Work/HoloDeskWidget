@@ -35,7 +35,7 @@ from .talents import (
 )
 from .theme import KEY_COLOR
 from .tray import TrayIcon, build_icon_file
-from .win32 import bind, user32 as _user32
+from .win32 import bind, monitor_rect, user32 as _user32
 
 bind(_user32.GetParent, [ctypes.c_void_p], ctypes.c_void_p)
 bind(_user32.GetWindowLongW, [ctypes.c_void_p, ctypes.c_int], ctypes.c_long)
@@ -82,6 +82,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.live_only = settings["live_only"]
         self.text_scale = settings["text_scale"]
         self.column_scale = settings["column_scale"]
+        self.name_scale = settings["name_scale"]
         self.active_production = (settings["active_production"]
             if settings["active_production"] in self._valid_production_ids()
             else self.productions[0]["id"])
@@ -470,9 +471,18 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
             self.request_render()
         self.root.after(60, self.tick_ticker)
 
+    def _apply_topmost(self):
+        # Fullscreen forces topmost on regardless of the pin setting: the
+        # taskbar is itself a topmost window, so a non-topmost fullscreen
+        # panel is drawn UNDER it and leaves a strip of another app on
+        # screen -- exactly what "show only this application" rules out. The
+        # user's own pin preference (self.topmost) is untouched and takes
+        # over again the moment fullscreen ends.
+        self.root.attributes("-topmost", self.topmost or self.is_fullscreen)
+
     def toggle_topmost(self):
         self.topmost = not self.topmost
-        self.root.attributes("-topmost", self.topmost)
+        self._apply_topmost()
         self.render()
 
     def toggle_fullscreen(self):
@@ -482,25 +492,63 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
             self.enter_fullscreen()
         self.render()
 
+    def _fullscreen_bounds(self):
+        # The monitor this window currently sits on, so fullscreen fills the
+        # screen the panel is actually on rather than always the primary one
+        # -- winfo_screenwidth()/winfo_screenheight() only ever describe the
+        # primary monitor, which left a window on a secondary screen sized
+        # for the wrong display (and positioned at the primary's origin).
+        # Falls back to the primary screen at 0,0 if Win32 wouldn't say.
+        try:
+            hwnd = _user32.GetParent(self.root.winfo_id())
+        except (tk.TclError, OSError):
+            hwnd = None
+        try:
+            rect = monitor_rect(hwnd)
+        except OSError:
+            rect = None
+        if rect is None:
+            return 0, 0, self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        left, top, right, bottom = rect
+        return left, top, right - left, bottom - top
+
     def enter_fullscreen(self):
         if self.is_fullscreen:
             return
         self._pre_fullscreen = (self.width, self.height,
                                 self.root.winfo_x(), self.root.winfo_y())
+        x, y, screen_width, screen_height = self._fullscreen_bounds()
         # Clamped to MAX_WIDTH/MAX_HEIGHT (4K) like every other resize, so a
         # screen larger than that doesn't hand the panel a size nothing else
         # in this file was ever laid out to expect.
-        self.width = max(MIN_WIDTH, min(MAX_WIDTH, self.root.winfo_screenwidth()))
-        self.height = max(MIN_HEIGHT, min(MAX_HEIGHT, self.root.winfo_screenheight()))
+        self.width = max(MIN_WIDTH, min(MAX_WIDTH, screen_width))
+        self.height = max(MIN_HEIGHT, min(MAX_HEIGHT, screen_height))
+        # Set before both calls below: render() draws the panel edge-to-edge
+        # with square corners while this is on (see GridMixin.panel_inset()),
+        # so the transparent margin the panel normally floats in -- which the
+        # desktop shows through -- doesn't frame a screen-filling window; and
+        # _apply_topmost() reads it to lift the window over the taskbar.
         self.is_fullscreen = True
-        self.root.geometry(f"{self.width}x{self.height}+0+0")
+        self._apply_topmost()
+        self.root.geometry(f"{self.width}x{self.height}+{x}+{y}")
+
+    def leave_fullscreen_state(self):
+        # Drops the fullscreen flag (and the now-meaningless restore point)
+        # and hands the pin button's own preference back control of the
+        # window's topmost bit, which enter_fullscreen() forces on. Shared by
+        # exit_fullscreen() and interaction.py's drag handlers, which end
+        # fullscreen implicitly by resizing or moving the window -- without
+        # the _apply_topmost() call here, one of those drags would leave the
+        # window pinned above everything with the pin button drawn as off.
+        self.is_fullscreen = False
+        self._pre_fullscreen = None
+        self._apply_topmost()
 
     def exit_fullscreen(self):
         if not self.is_fullscreen or self._pre_fullscreen is None:
             return
         self.width, _, x, y = self._pre_fullscreen
-        self.is_fullscreen = False
-        self._pre_fullscreen = None
+        self.leave_fullscreen_state()
         # Recompute for live_only's CURRENT state rather than restoring the
         # saved pre-fullscreen height verbatim -- live_only may have been
         # toggled while fullscreen (fit_height() is a no-op then, see
@@ -532,13 +580,35 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.fit_height()
         self.render()
 
-    def _fit_height_value(self):
-        if self.live_only:
-            _, natural_end = self.build_grid_layout(DEFAULT_ROW_HEIGHT, DEFAULT_DIVIDER_HEIGHT)
-            target_height = natural_end + FOOTER_RESERVED_HEIGHT
-        else:
-            target_height = self._all_height
+    def _clamped_height(self, target_height):
         return max(MIN_HEIGHT, min(MAX_HEIGHT, round(target_height)))
+
+    def _fit_height_value(self):
+        if not self.live_only:
+            return self._clamped_height(self._all_height)
+        # Start from the tallest the live list can lay out -- one column,
+        # every live row at full size -- which is the height that is
+        # guaranteed to have room for all of them...
+        _, natural_end = self.build_grid_layout(DEFAULT_ROW_HEIGHT, DEFAULT_DIVIDER_HEIGHT,
+                                                 num_cols=1)
+        target_height = self._clamped_height(natural_end + FOOTER_RESERVED_HEIGHT)
+        # ...then ask compute_grid() which layout it would actually pick at
+        # that height and trim to the bottom of THAT one, since a wide window
+        # may well wrap the same rows into columns and grow the text to suit
+        # (see its column search). Without this second pass the window would
+        # be sized for a single tall column while showing a short wide grid,
+        # i.e. exactly the band of empty panel the search exists to avoid.
+        # One pass, not a loop to a fixed point: the trimmed height is the
+        # chosen layout's own footprint, so that layout still fits it exactly.
+        previous_height = self.height
+        try:
+            self.height = target_height
+            layout_items, _row_height, _divider_height, _scale = self.compute_grid()
+        finally:
+            self.height = previous_height
+        grid_end = max((item["y"] + item["h"] for item in layout_items),
+                       default=self.grid_top())
+        return self._clamped_height(grid_end + FOOTER_RESERVED_HEIGHT)
 
     def fit_height(self):
         if self.is_fullscreen:
@@ -574,7 +644,8 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
             "dark_mode": self.dark_mode,
             "live_only": self.live_only,
             "text_scale": self.text_scale,
-        "column_scale": self.column_scale,
+            "column_scale": self.column_scale,
+            "name_scale": self.name_scale,
             "active_production": self.active_production,
             "enabled_productions": [p["id"] for p in self.productions if p["id"] in self.enabled_productions],
         }

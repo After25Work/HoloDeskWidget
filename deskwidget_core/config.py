@@ -25,14 +25,22 @@ MIN_WINDOW_ALPHA = 0.05
 MIN_BACKGROUND_DARKNESS = 0.3
 TEXT_SCALE_MIN = 0.8
 TEXT_SCALE_MAX = 1.0
-# How far the user may widen/narrow the fixed text lanes the grid used to
-# hardcode -- the talent grid's column pitch (grid_layout.TARGET_COL_WIDTH)
-# and, in the title view, the name lane the now-playing ticker sits beside
-# (see rendering.py's label_area_w). 1.0 reproduces exactly the widths those
-# two were pinned to before this slider existed, so an existing settings.json
-# with no "column_scale" key looks unchanged after upgrading.
+# How far the user may widen/narrow the talent grid's column pitch, which
+# grid_layout.TARGET_COL_WIDTH used to hardcode. 1.0 reproduces exactly the
+# pitch it was pinned to before this slider existed, so an existing
+# settings.json with no "column_scale" key looks unchanged after upgrading.
+# The title view's name/title split has its own slider (NAME_SCALE_* below):
+# one control per view, since they are different layouts.
 COLUMN_SCALE_MIN = 0.6
 COLUMN_SCALE_MAX = 2.0
+# How wide the talent-name lane may be made in the title view (live-only, or
+# a title query typed), where each row is a name beside its now-playing
+# program title. This is the name/title split: whatever the name lane doesn't
+# take, the program title gets. 1.0 reproduces the fixed 170px/40%-of-the-row
+# lane that used to be pinned to the column-pitch slider, so an existing
+# settings.json with no "name_scale" key looks unchanged after upgrading.
+NAME_SCALE_MIN = 0.5
+NAME_SCALE_MAX = 1.8
 
 # UI chrome font, shared by menus.py's popups/context menu and
 # interaction.py's tooltip so a future font/size tweak has one place to
@@ -60,6 +68,7 @@ DEFAULT_SETTINGS = {
     "live_only": False,
     "text_scale": 1.0,
     "column_scale": 1.0,
+    "name_scale": 1.0,
     # Validated against the actually-loaded productions manifest in
     # widget.py (not here) since that's data talents.py owns, not a plain
     # window/UI preference like everything else in this file.
@@ -133,6 +142,9 @@ def load_settings():
     settings["column_scale"] = _coerce_clamped(
         settings["column_scale"], DEFAULT_SETTINGS["column_scale"], float,
         COLUMN_SCALE_MIN, COLUMN_SCALE_MAX)
+    settings["name_scale"] = _coerce_clamped(
+        settings["name_scale"], DEFAULT_SETTINGS["name_scale"], float,
+        NAME_SCALE_MIN, NAME_SCALE_MAX)
     settings["active_production"] = _coerce(
         settings["active_production"], DEFAULT_SETTINGS["active_production"], str)
     raw_enabled = settings["enabled_productions"]

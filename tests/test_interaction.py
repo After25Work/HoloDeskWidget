@@ -8,12 +8,14 @@ from deskwidget_core.config import (
     COLUMN_SCALE_MAX,
     COLUMN_SCALE_MIN,
     MIN_BACKGROUND_DARKNESS,
+    NAME_SCALE_MAX,
+    NAME_SCALE_MIN,
     TEXT_SCALE_MAX,
     TEXT_SCALE_MIN,
 )
 from deskwidget_core.interaction import InteractionMixin
 
-SLIDER_KEYS = ("background", "text", "width")
+SLIDER_KEYS = ("background", "text", "width", "name")
 
 
 class FakeWidget(InteractionMixin):
@@ -21,6 +23,7 @@ class FakeWidget(InteractionMixin):
         self.background_alpha = 0.0
         self.text_scale = 1.0
         self.column_scale = 1.0
+        self.name_scale = 1.0
         self.applied_alpha = None
 
     def _apply_background_alpha(self):
@@ -87,6 +90,23 @@ def test_each_slider_writes_only_its_own_setting():
     assert widget.column_scale == COLUMN_SCALE_MAX
     assert widget.text_scale == 1.0
     assert widget.background_alpha == 0.0
+    assert widget.name_scale == 1.0
+
+
+def test_name_and_width_sliders_are_independent_of_each_other():
+    # The title view's name/title split and the plain grid's column pitch
+    # used to share one slider, so neither could be set without moving the
+    # other; they are two separate controls now.
+    widget = FakeWidget()
+
+    widget.set_slider_value("name", NAME_SCALE_MAX)
+
+    assert widget.name_scale == NAME_SCALE_MAX
+    assert widget.column_scale == 1.0
+
+    widget.set_slider_value("width", COLUMN_SCALE_MIN)
+
+    assert widget.name_scale == NAME_SCALE_MAX
 
 
 def test_ranges_match_the_configured_bounds():
@@ -95,3 +115,4 @@ def test_ranges_match_the_configured_bounds():
     assert widget.slider_range("background") == (MIN_BACKGROUND_DARKNESS, 1.0)
     assert widget.slider_range("text") == (TEXT_SCALE_MIN, TEXT_SCALE_MAX)
     assert widget.slider_range("width") == (COLUMN_SCALE_MIN, COLUMN_SCALE_MAX)
+    assert widget.slider_range("name") == (NAME_SCALE_MIN, NAME_SCALE_MAX)

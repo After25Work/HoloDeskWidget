@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageTk
 
 from . import appconfig
 from .fonts import emoji_font, font
-from .grid_layout import LABEL_PADDING, PANEL_INSET, SEARCH_CLEAR_GAP, SEARCH_ICON_LANE
+from .grid_layout import LABEL_PADDING, SEARCH_CLEAR_GAP, SEARCH_ICON_LANE
 from .strings import STRINGS, english_name
 from .theme import KEY_COLOR, MIN_LABEL_SIZE, THEME_PALETTE, THEMES, production_band_color
 
@@ -28,6 +28,7 @@ SLIDER_LABEL_KEYS = {
     "background": "bg_slider",
     "text": "text_slider",
     "width": "width_slider",
+    "name": "name_slider",
 }
 
 # Ranges covering the emoji live-stream titles actually use (pictographs,
@@ -111,8 +112,9 @@ class RenderingMixin:
         self.sync_search_entry()
 
     def _draw_top_bar(self, draw, colors, accent, btn):
+        inset = self.panel_inset()
         draw.rounded_rectangle(
-            (PANEL_INSET, PANEL_INSET, self.width - PANEL_INSET, self.height - PANEL_INSET), 22,
+            (inset, inset, self.width - inset, self.height - inset), self.panel_radius(),
             fill=self.tint(colors["panel"][:3]) + (colors["panel"][3],),
             outline=colors["outline"], width=1)
         if self.has_multiple_productions():
@@ -207,8 +209,10 @@ class RenderingMixin:
         #   - "サイズ"/Text is a user preference separate from grid_scale
         #     (which only auto-shrinks to keep the no-scroll grid fitting the
         #     window): it just multiplies the label/divider font sizes below.
-        #   - "幅"/Width is the column-pitch and name-lane multiplier -- see
-        #     GridMixin.target_col_width() and label_area_w below.
+        #   - "幅"/Width is the plain grid's column-pitch multiplier -- see
+        #     GridMixin.target_col_width().
+        #   - "名前幅"/Name is the title view's name-lane multiplier, i.e. the
+        #     name/title split -- see label_area_w below.
         for key, geometry in self.slider_geometry().items():
             self.draw_slider(draw, geometry["x"], geometry["y"], self.t(SLIDER_LABEL_KEYS[key]),
                              self.slider_value(key) * 100, self.slider_fraction(key),
@@ -363,17 +367,22 @@ class RenderingMixin:
                      else colors["error"] if state == "error" else colors["muted"])
             bullet, display_name = self.talent_bullet_and_display_name(name, slug, state, self.lang)
             label = bullet + display_name
-            # In the title view every row is one talent wide, so the name only
-            # needs a modest lane — the rest of the row goes to the
-            # now-playing ticker built below. That lane used to be a fixed
-            # 40%-of-the-row / 170px pair; both halves now move with the width
-            # slider (column_scale), which is what lets the user trade name
-            # room against title room without resizing the window. The
+            # In the title view a row is a talent name beside its
+            # now-playing program title, so the name only needs a lane and
+            # the rest of the row goes to the ticker built below. That lane
+            # used to be a fixed 40%-of-the-row / 170px pair; both halves now
+            # move with the name-width slider (name_scale), which is what
+            # lets the user set the name/title split -- widening the name
+            # narrows the title by exactly as much -- without resizing the
+            # window. Its own slider, separate from the column-pitch one
+            # (column_scale) that reflows the plain grid's columns: those are
+            # two different views' widths, and sharing one control meant
+            # neither could be set without disturbing the other. The
             # proportional cap is held at 0.75 so the widest setting still
             # leaves a usable ticker lane rather than squeezing it to nothing.
             title = live_titles.get(name) if self.show_titles else None
-            label_area_w = (min(item["w"] * min(0.75, 0.4 * self.column_scale),
-                                max(90, 170 * label_scale) * self.column_scale)
+            label_area_w = (min(item["w"] * min(0.75, 0.4 * self.name_scale),
+                                max(90, 170 * label_scale) * self.name_scale)
                             if title else item["w"])
             max_label_width = label_area_w - LABEL_PADDING
             # Drawing is deferred to a second pass below (once every label's
@@ -447,7 +456,7 @@ class RenderingMixin:
         #     to be drawn, so giving the ticker a bigger share can never come
         #     out of an ellipsized name (the no-abbreviation goal below).
         # ...and then capped at the row itself, for a name too long for even
-        # that. At column_scale 1.0 the requested width is exactly the 170px/
+        # that. At name_scale 1.0 the requested width is exactly the 170px/
         # 40% pair this lane was fixed at before the slider existed.
         title_entries = [e for e in talent_entries if e["title"]]
         shared_title_label_area_w = None

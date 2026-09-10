@@ -26,7 +26,6 @@ STATUS_SLIDER_GAP = 5
 # search is one click away and, more importantly, so grid_top() below stays a
 # plain sum of fixed offsets -- a row that appears and disappears would move
 # every talent row down/up under the pointer the moment the field was opened.
-SLIDER_SEARCH_GAP = 22
 SEARCH_ROW_HEIGHT = 24
 SEARCH_GRID_GAP = 12
 
@@ -43,6 +42,13 @@ GRID_MARGIN = 40
 # adjusting the talent grid's width never reflows the clock section along
 # with it (see _clock_layout()).
 TARGET_COL_WIDTH = 110
+# Narrowest a title-view column may be. A row there is a talent name beside
+# its now-playing program title (see rendering.py's label_area_w), so it needs
+# far more room than a bare name -- but not the whole panel width, which is
+# what it used to be pinned to. Anything above this and compute_grid() is free
+# to lay the title view out in several columns when that fills the window
+# better than one tall column of rows shrunk to fit.
+TITLE_COL_WIDTH = 420
 # Extra right-side padding subtracted from the window width alongside
 # GRID_MARGIN (the left-side one) when computing how much horizontal room
 # the grid/clock content has to work with.
@@ -58,24 +64,36 @@ DEFAULT_DIVIDER_HEIGHT = 18
 # Inset (px) of the drawn panel's rounded-rect edge from the window's own
 # edge (see render()'s panel fill) -- shared with resize_edge() below so the
 # resize hit-band always hugs the panel's actual drawn edge instead of the
-# two silently drifting apart if one is ever changed without the other.
+# two silently drifting apart if one is ever changed without the other. Read
+# through panel_inset()/panel_radius() rather than directly: fullscreen
+# collapses both to 0 (see those two).
 PANEL_INSET = 20
+PANEL_RADIUS = 22
 
 # Horizontal padding subtracted from a column/cell's raw width to get the
 # width actually available to its label -- shared by every column-width ->
 # max_label_width conversion here and in rendering.py so they can't drift.
 LABEL_PADDING = 12
 
-# The control row's three sliders, left to right, with the block width each
-# one's label+track occupies. Laid out right-to-left from the panel's right
-# edge (see slider_geometry()), so a slider added at the FRONT of this tuple
+# The control row's sliders, left to right, with the block width each one's
+# label+track occupies. Laid out right-to-left from the panel's right edge
+# (see slider_geometry()), so a slider added at the FRONT of this tuple
 # leaves the ones after it exactly where they already were on screen.
-SLIDER_BLOCKS = (("width", 124), ("background", 134), ("text", 124))
+SLIDER_BLOCKS = (("name", 124), ("width", 124), ("background", 134), ("text", 124))
 SLIDER_BLOCK_GAP = 14
-# Label offset within a block, sized for the longest of the three labels'
+# Label offset within a block, sized for the longest of the labels'
 # "label + 100%" text ("背景濃さ 100%") and reused for all of them so their
 # tracks start at the same offset within their own blocks.
 SLIDER_LABEL_OFFSET = 74
+# Left edge the slider group packs against, matching the status bar's own
+# content margin above it -- a block that would cross this wraps to another
+# slider row instead of running off the panel (see slider_geometry()).
+SLIDER_AREA_LEFT = 40
+# Vertical pitch between wrapped slider rows, and the room the last row
+# leaves before the title-filter row below -- one constant for both, so a
+# single slider row reproduces exactly the fixed gap the cascade used before
+# the row could wrap at all.
+SLIDER_ROW_PITCH = 22
 
 # Title-filter row geometry. The box is a fraction of the content width
 # (clamped, so it stays usable at MIN_WIDTH and doesn't sprawl across a 4K
@@ -114,6 +132,22 @@ class GridMixin:
         "ne": "size_ne_sw", "sw": "size_ne_sw",
         "nw": "size_nw_se", "se": "size_nw_se",
     }
+
+    def panel_inset(self):
+        # 0 while fullscreen, PANEL_INSET otherwise. Everything outside the
+        # drawn panel is -transparentcolor, i.e. a see-through frame the
+        # desktop (and any window behind this one) shows through -- fine for
+        # a floating widget, but on a window that is supposed to be showing
+        # nothing but this app it is a border of some other app all the way
+        # around the screen. Collapsing the inset makes the panel reach the
+        # screen's own edges instead.
+        return 0 if self.is_fullscreen else PANEL_INSET
+
+    def panel_radius(self):
+        # Square corners while fullscreen, for the same reason panel_inset()
+        # goes to 0: a rounded corner on a screen-filling panel is four
+        # notches of desktop showing through at the corners of the screen.
+        return 0 if self.is_fullscreen else PANEL_RADIUS
 
     def top_button_rects(self):
         order = layout.button_order(self.has_multiple_productions())
@@ -176,7 +210,7 @@ class GridMixin:
         return self.status_bar_bottom() + STATUS_SLIDER_GAP
 
     def search_row_y(self):
-        return self.slider_row_y() + SLIDER_SEARCH_GAP
+        return self.slider_row_y() + self.slider_rows() * SLIDER_ROW_PITCH
 
     def search_box_rect(self):
         # The drawn field itself (magnifier lane + the native entry placed
@@ -228,7 +262,7 @@ class GridMixin:
         # the window and never reach this widget at all (see the note on
         # resize_grip_rect() above).
         m = self._RESIZE_MARGIN
-        inset = PANEL_INSET
+        inset = self.panel_inset()
         near_left = inset <= x <= inset + m
         near_right = self.width - inset - m <= x <= self.width - inset
         near_top = inset <= y <= inset + m
@@ -255,26 +289,47 @@ class GridMixin:
         return (38, self.height - 65, self.width - 44, self.height - 34)
 
     def slider_geometry(self):
-        # Every slider sits on one row, right-justified as a group against the
-        # panel's right edge — fixed (not width-proportional) block widths so
-        # they still fit side by side at MIN_WIDTH, and packed right-to-left
-        # from SLIDER_BLOCKS so the existing background/text pair keeps its
-        # exact on-screen position now that a third (width) slider has joined
-        # them on the left. Returned in SLIDER_BLOCKS' own left-to-right order
-        # so focusable_items()'s Tab order follows the visual reading order.
-        y = self.slider_row_y()
+        # The sliders, right-justified as a group against the panel's right
+        # edge — fixed (not width-proportional) block widths so each stays
+        # readable at any window size, and packed right-to-left from
+        # SLIDER_BLOCKS so a slider added at the front of that tuple leaves
+        # every existing one on the exact pixels it already occupied.
+        #
+        # A block that would cross SLIDER_AREA_LEFT starts another slider row
+        # below instead of running off the panel, and grid_top()'s cascade
+        # follows along via slider_rows() so everything below simply starts
+        # lower. Both variants ship a min_width that fits all four blocks on
+        # one row, so this is what keeps "the slider row is inside the panel"
+        # true by construction for any width and any number of blocks --
+        # rather than by a coincidence between SLIDER_BLOCKS here and a
+        # min_width in each variant's profile.py, which is what silently
+        # broke the moment a fourth slider was added.
+        #
+        # Returned in SLIDER_BLOCKS' own left-to-right order so
+        # focusable_items()'s Tab order follows the visual reading order.
+        top = self.slider_row_y()
         content_right = self.width - 40
-        lefts = {}
-        cursor = content_right
+        placed = {}
+        cursor, row = content_right, 0
         for key, block_width in reversed(SLIDER_BLOCKS):
-            lefts[key] = cursor - block_width
-            cursor = lefts[key] - SLIDER_BLOCK_GAP
-        return {
-            key: {"x": lefts[key], "y": y,
-                  "track_start": lefts[key] + SLIDER_LABEL_OFFSET,
-                  "track_end": lefts[key] + block_width}
-            for key, block_width in SLIDER_BLOCKS
-        }
+            left = cursor - block_width
+            if left < SLIDER_AREA_LEFT and cursor < content_right:
+                # Doesn't fit beside what's already on this row -- and isn't
+                # simply too wide for the panel outright (cursor is still
+                # back at the right edge), which no extra row would fix.
+                row += 1
+                cursor = content_right
+                left = cursor - block_width
+            placed[key] = {"x": left, "y": top + row * SLIDER_ROW_PITCH, "row": row,
+                           "track_start": left + SLIDER_LABEL_OFFSET,
+                           "track_end": left + block_width}
+            cursor = left - SLIDER_BLOCK_GAP
+        return {key: placed[key] for key, _block_width in SLIDER_BLOCKS}
+
+    def slider_rows(self):
+        # How many rows the slider group wrapped onto at this width -- what
+        # the search row (and, through it, the whole grid) has to clear.
+        return max(block["row"] for block in self.slider_geometry().values()) + 1
 
     def target_col_width(self):
         # The talent grid's column pitch: TARGET_COL_WIDTH scaled by the
@@ -288,6 +343,18 @@ class GridMixin:
         # exactly or compute_grid()'s search picks a scale for a layout
         # build_grid_layout() never actually produces.
         return TARGET_COL_WIDTH * self.column_scale
+
+    def grid_col_width(self):
+        # The narrowest column the CURRENT view is laid out in, which is what
+        # decides how many columns a given window width naturally holds. The
+        # title view's rows carry a program title beside the name and so need
+        # a much wider column (TITLE_COL_WIDTH) than the plain grid's bare
+        # names -- but they are no longer pinned to one full-width column per
+        # row, which left most of a wide window empty below a short live list
+        # and shrank a long one to fit rather than using the room beside it.
+        # Read by both build_grid_layout() and compute_grid(), the same
+        # can't-drift-apart reason target_col_width() exists.
+        return TITLE_COL_WIDTH if self.show_titles else self.target_col_width()
 
     def _clock_layout(self, available, col_cap):
         # Picks how many columns (<=3, capped by col_cap on a narrow
@@ -396,14 +463,13 @@ class GridMixin:
         # shaded background band) to layout_items and returns the y
         # position just below the talent grid.
         #
-        # In the title view (the live-only filter is on, or a title query has
-        # been typed -- see show_titles), every remaining talent is live, so
-        # give each its own full-width row (one line per talent) instead of
-        # the normal grid columns — that's the room the program-title ticker
-        # in render() needs to the right of the name.
-        show_titles = self.show_titles
-        unit_cols = 1 if show_titles else num_cols
-        unit_col_width = available if show_titles else available / num_cols
+        # Both views lay out in num_cols columns of equal width; they differ
+        # only in how wide a column has to be before another one fits (see
+        # grid_col_width()), since a title-view row carries the program-title
+        # ticker to the right of the name and so needs far more of the panel
+        # than a bare name does.
+        unit_cols = num_cols
+        unit_col_width = available / num_cols
         group_position = 0
         for unit, indices in units.items():
             # On the "All" tab each unit is a whole production (see
@@ -465,7 +531,7 @@ class GridMixin:
         # font against.
         margin = GRID_MARGIN
         available = self.width - margin - RIGHT_PADDING
-        natural_cols = max(1, int(available // self.target_col_width()))
+        natural_cols = max(1, int(available // self.grid_col_width()))
         # The world clock's column cap is measured against the UNSCALED
         # TARGET_COL_WIDTH, not the width slider's pitch: the clock's own
         # columns are content-sized (see _clock_layout()), so letting the
@@ -587,7 +653,7 @@ class GridMixin:
         # Both counts mirror build_grid_layout()'s own -- the talent grid on
         # the width slider's scaled pitch, the world clock on the unscaled
         # one so it never reflows along with it (see the note there).
-        natural_cols = max(1, int(available_width // self.target_col_width()))
+        natural_cols = max(1, int(available_width // self.grid_col_width()))
         clock_col_cap = max(1, int(available_width // TARGET_COL_WIDTH))
 
         # The world clock's row/divider height is pinned to the text-size
@@ -699,21 +765,42 @@ class GridMixin:
                                                       targets=targets, states=states, titles=titles)
             content_height = max(1, natural_end - grid_top - clock_base_height)
             raw_scale = available_height / content_height
-            return max(0.15, min(scale_cap, raw_scale))
+            scale = max(0.15, min(scale_cap, raw_scale))
+            # How much of the panel's height this candidate actually covers.
+            # It falls short of 1 exactly when the label-fit ceiling
+            # (scale_cap) stops the text growing before the content has
+            # reached the bottom -- the grid is top-aligned, so everything
+            # the ceiling held back becomes a band of empty panel under the
+            # last row. Scored, not just recorded: see the search below.
+            return scale, min(1.0, scale / raw_scale)
 
         # Try every column count from the width-derived natural_cols down to
-        # a single column and keep whichever yields the largest resulting
-        # scale. Fewer columns stretch each one wider (see build_grid_layout)
-        # instead of leaving the freed-up columns empty on the right, so
-        # there's no horizontal cost to weigh against the vertical one
-        # anymore — the best column count is simply whichever fills the
-        # panel with the biggest readable text, favoring natural_cols on
-        # ties so a wide layout is preferred when several counts tie.
-        num_cols, scale = natural_cols, measure(natural_cols)
+        # a single column and keep whichever scores best. Fewer columns
+        # stretch each one wider (see build_grid_layout) instead of leaving
+        # the freed-up columns empty on the right, so there's no horizontal
+        # cost to weigh against the vertical one; natural_cols is favored on
+        # ties, since the loop only replaces it on a strict improvement.
+        #
+        # The score is the text scale weighted by how much of the panel that
+        # layout fills, rather than the scale alone: on window sizes where
+        # the ceiling binds, the widest layout can end up big text over a
+        # third of a panel of nothing, while some narrower count reaches the
+        # bottom instead. Weighting makes that trade explicitly -- a layout
+        # leaving a third of the panel empty has to carry text half again as
+        # large to still be worth picking -- so neither a stranded band of
+        # empty panel nor a roster shrunk small enough to fill one wins on
+        # its own. A candidate that fills scores exactly its own scale, so
+        # among those the largest text still wins outright.
+        def score(measured):
+            candidate_scale, fill = measured
+            return candidate_scale * fill
+
+        num_cols, best = natural_cols, measure(natural_cols)
         for cols in range(natural_cols - 1, 0, -1):
-            cand_scale = measure(cols)
-            if cand_scale > scale:
-                num_cols, scale = cols, cand_scale
+            candidate = measure(cols)
+            if score(candidate) > score(best):
+                num_cols, best = cols, candidate
+        scale = best[0]
         row_height = DEFAULT_ROW_HEIGHT * scale
         divider_height = DEFAULT_DIVIDER_HEIGHT * scale
         # The label-fit ceiling derived above (or raw_scale itself, if that's
