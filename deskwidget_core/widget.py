@@ -122,7 +122,10 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # guarantee it'll still be on the next run.
         self.column_widths = None
         self.render_pending = False
-        self.geometry_pending = False
+        # When the most recently completed render() finished (monotonic
+        # clock) -- None until the first one -- see request_render()'s own
+        # note on why its redraw rate is floored to _RENDER_MIN_INTERVAL_MS.
+        self._last_render_at: Optional[float] = None
         self.last_updated: Optional[str] = None
         # Attributes below only ever materialize conditionally in the old
         # single-file version (via hasattr/getattr/del), which is what let
@@ -141,7 +144,6 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.resize_origin: Optional[Tuple[int, int, int, int, int, int]] = None
         self.resize_drag = False
         self.active_resize_edge: Optional[str] = None
-        self.pending_position: Optional[Tuple[int, int]] = None
         # Fullscreen (fill-the-screen) toggle state. _pre_fullscreen holds the
         # (width, height, x, y) to restore on exit -- None whenever
         # is_fullscreen is False, so current_settings() can tell there's

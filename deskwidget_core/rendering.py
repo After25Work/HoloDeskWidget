@@ -709,11 +709,33 @@ class RenderingMixin:
         # each name shrink to its own best-fitting size — a long name would
         # then land visibly smaller than a short one next to it even though
         # both sit in same-width columns.
-        for size in range(base_size, min_size - 1, -1):
-            if all(RenderingMixin._label_width(label, size, bold) <= width
-                   for label, width in labels_and_widths):
-                return size
-        return min_size
+        #
+        # Binary search (like _widest_fit() below, on the same fits-are-
+        # monotonic-in-size assumption) rather than a linear scan down from
+        # base_size: profiling a resize drag on a normal-sized roster showed
+        # this scan's own getbbox() calls -- not compute_grid()'s column-count
+        # search -- were the single largest chunk of render() time, since
+        # every render() during a drag calls this at a font size range that
+        # rarely fits at base_size (a resize is exactly when the ceiling and
+        # the content disagree), forcing the old linear scan through most of
+        # the range on every single frame.
+        def fits(size):
+            return all(RenderingMixin._label_width(label, size, bold) <= width
+                       for label, width in labels_and_widths)
+        if base_size <= min_size:
+            return min_size
+        if fits(base_size):
+            return base_size
+        if not fits(min_size):
+            return min_size
+        lo, hi = min_size, base_size
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            if fits(mid):
+                lo = mid
+            else:
+                hi = mid - 1
+        return lo
 
     @staticmethod
     @functools.lru_cache(maxsize=256)

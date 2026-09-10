@@ -3,6 +3,7 @@ focus traversal, hover tooltips, clipboard copy, and slider dragging. These
 read the rects/hit-tests GridMixin computes and dispatch into whatever
 button/menu/refresh action was hit.
 """
+import time
 import tkinter as tk
 
 from .config import (
@@ -33,6 +34,17 @@ _TOOLTIP_OFFSET_X = 16
 _TOOLTIP_OFFSET_Y = 18
 # Fraction of the slider's full range each keyboard Left/Right press moves.
 _SLIDER_KEY_STEP = 0.05
+# Floor (ms) between the start of one coalesced render and the next, during a
+# mouse-driven drag (resize/slider/boundary). render()'s own cost already
+# throttles the redraw rate on a large roster (recomputing the grid layout
+# and redrawing every row in Pillow easily costs tens of milliseconds -- see
+# the profiling notes by request_render() below), but on a small roster or a
+# fast machine render() can finish fast enough that a burst of B1-Motion
+# events drains the Tk event queue quicker than any display could actually
+# show a new frame, triggering far more full redraws than useful and burning
+# CPU on frames nobody sees. ~30fps, well under what render() needs to stay
+# smooth-looking but well above what a resize drag needs to read as fluid.
+_RENDER_MIN_INTERVAL_MS = 33
 
 
 class InteractionMixin:
@@ -159,14 +171,14 @@ class InteractionMixin:
             # grip drag where the origin never changes.
             new_x = start_x + (start_w - self.width) if "w" in edge else start_x
             new_y = start_y + (start_h - self.height) if "n" in edge else start_y
-            # Always set (not just when it differs from start_x/start_y):
-            # request_render() coalesces bursts of drag_move() calls into one
-            # render, so an unconditional assignment here is what keeps
-            # _render_now() from applying a stale offset left over from an
-            # earlier call in the same burst whose new_x/new_y happened not
-            # to match this one's.
-            self.pending_position = (new_x, new_y)
-            self.geometry_pending = True
+            # Applied immediately (like the plain window-drag path below),
+            # not queued behind request_render()'s coalesced content redraw:
+            # on a large roster compute_grid() plus the full Pillow repaint
+            # can take tens to hundreds of milliseconds, and gating the
+            # window's own box on that made a resize drag feel stuttery --
+            # the visible edge only moved once per slow render instead of on
+            # every pointer move.
+            self.root.geometry(f"{self.width}x{self.height}+{new_x}+{new_y}")
             self.request_render()
             return
         if self.slider_drag:
@@ -191,19 +203,26 @@ class InteractionMixin:
         if self.render_pending:
             return
         self.render_pending = True
-        self.root.after_idle(self._render_now)
+        # On top of that coalescing, space the callback itself out to no more
+        # than once per _RENDER_MIN_INTERVAL_MS since the last render actually
+        # ran -- see that constant's own note for why coalescing alone isn't
+        # always enough of a limit. Still runs on the very next idle tick
+        # (delay 0) whenever that interval has already elapsed, which is the
+        # common case on a large roster where render() alone takes longer
+        # than the floor.
+        elapsed_ms = (None if self._last_render_at is None
+                      else (time.monotonic() - self._last_render_at) * 1000)
+        delay_ms = (0 if elapsed_ms is None
+                    else max(0, round(_RENDER_MIN_INTERVAL_MS - elapsed_ms)))
+        if delay_ms <= 0:
+            self.root.after_idle(self._render_now)
+        else:
+            self.root.after(delay_ms, self._render_now)
 
     def _render_now(self):
         self.render_pending = False
-        if self.geometry_pending:
-            self.geometry_pending = False
-            if self.pending_position is not None:
-                x, y = self.pending_position
-                self.pending_position = None
-            else:
-                x, y = self.root.winfo_x(), self.root.winfo_y()
-            self.root.geometry(f"{self.width}x{self.height}+{x}+{y}")
         self.render()
+        self._last_render_at = time.monotonic()
 
     def click(self, event):
         guard, self.menu_reopen_guard = self.menu_reopen_guard, None
