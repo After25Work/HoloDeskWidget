@@ -53,6 +53,13 @@ TITLE_COL_WIDTH = 420
 # GRID_MARGIN (the left-side one) when computing how much horizontal room
 # the grid/clock content has to work with.
 RIGHT_PADDING = 40
+# Horizontal gap between adjacent title-view columns. Without it, a column's
+# ticker (which otherwise stretches all the way to col_x of the next column --
+# see _layout_talent_section()) runs flush into its neighbor's name, so
+# consecutive "name (now-playing title)" entries read as one unbroken run.
+# Only the title view lays talents out in more than one such column (see
+# grid_col_width()), so the plain grid's columns of bare names are unaffected.
+TITLE_COLUMN_GAP = 24
 
 # Narrowest a title-view column may be dragged to via column_boundary_hit()'s
 # resize handle -- keeps a dragged-thin column from squeezing its neighbor's
@@ -470,7 +477,8 @@ class GridMixin:
         return y
 
     def _layout_talent_section(self, layout_items, y, margin, available, num_cols,
-                                row_height, divider_height, units, column_fractions=None):
+                                row_height, divider_height, units, column_fractions=None,
+                                column_gap=0):
         # Appends each unit's divider/rows (and, on the "All" tab, its
         # shaded background band) to layout_items and returns the y
         # position just below the talent grid.
@@ -512,8 +520,16 @@ class GridMixin:
             y += divider_height
             col = 0
             for index in indices:
+                # The gap is trimmed off this column's trailing edge (rather
+                # than split between both edges) so col_x -- and everything
+                # measured against it, like column_boundary_hit()'s drag
+                # math and _draw_column_boundaries()'s divider line -- never
+                # has to know a gap exists at all.
+                w = col_widths_px[col]
+                if column_gap and col != unit_cols - 1:
+                    w -= column_gap
                 layout_items.append({"type": "talent", "x": col_x[col], "y": y,
-                              "w": col_widths_px[col], "index": index, "h": row_height})
+                              "w": w, "index": index, "h": row_height})
                 col += 1
                 if col == unit_cols:
                     col = 0
@@ -608,8 +624,10 @@ class GridMixin:
         y = self.grid_top()
         y = self._layout_clock_section(layout_items, y, margin, available, clock_col_cap,
                                         clock_row_height, clock_divider_height, clock_layout)
+        column_gap = TITLE_COLUMN_GAP if self.show_titles else 0
         y = self._layout_talent_section(layout_items, y, margin, available, num_cols,
-                                         row_height, divider_height, units, column_fractions)
+                                         row_height, divider_height, units, column_fractions,
+                                         column_gap)
         return layout_items, y
 
     def _effective_column_fractions(self, num_cols):
