@@ -107,6 +107,20 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.init_search()
         self.menu_reopen_guard: Optional[str] = None
         self.slider_drag = False
+        self.name_boundary_drag = None
+        self.column_boundary_drag = None
+        # Per-column width fractions for the title view (see
+        # grid_layout.column_boundary_hit()) -- None means "no manual
+        # override yet, split every column equally", which is also what a
+        # window resize/tab switch that changes the column count falls back
+        # to (see _effective_column_fractions()) rather than trying to carry
+        # old ratios across a changed column count. Deliberately not part of
+        # settings.json: unlike name_scale/column_scale (single numbers that
+        # still mean something on a differently-sized window next launch), a
+        # list of per-column fractions is only meaningful for the exact
+        # column count it was dragged at, which a saved window size can't
+        # guarantee it'll still be on the next run.
+        self.column_widths = None
         self.render_pending = False
         self.geometry_pending = False
         self.last_updated: Optional[str] = None

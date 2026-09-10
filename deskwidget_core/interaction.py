@@ -103,10 +103,48 @@ class InteractionMixin:
                                   self.root.winfo_x(), self.root.winfo_y())
             return
         self.resize_drag = False
+        # A press on the name/title boundary or a title-view column boundary
+        # is its own drag mode (see drag_move()/click() below), checked ahead
+        # of the ordinary slider/window drag so grabbing either one can't
+        # also start a window drag underneath it.
+        name_hit = self.name_boundary_hit(event.x, event.y)
+        column_hit = None if name_hit is not None else self.column_boundary_hit(event.x, event.y)
+        self.name_boundary_drag = (
+            {"start_x": event.x, "start_name_scale": self.name_scale, "k": name_hit["name_boundary_k"]}
+            if name_hit is not None else None)
+        self.column_boundary_drag = (self.start_column_boundary_drag(column_hit)
+                                      if column_hit is not None else None)
+        if name_hit is not None or column_hit is not None:
+            self.slider_drag = False
+            self.drag_origin = None
+            return
         self.slider_drag = self.slider_hit(event.x, event.y)
         self.drag_origin = (event.x_root, event.y_root, self.root.winfo_x(), self.root.winfo_y())
 
     def drag_move(self, event):
+        if self.name_boundary_drag is not None:
+            drag = self.name_boundary_drag
+            if drag["k"] > 0:
+                # Relative to where the drag started (not an absolute
+                # position -> name_scale inversion): the boundary actually on
+                # screen can sit well past what this row's own K*name_scale
+                # would predict, whenever a long name's snug_width -- not the
+                # name_scale request -- is what's currently sizing the shared
+                # lane (see rendering.py's shared_title_label_area_w). Basing
+                # the drag on the pointer's own movement since press, rather
+                # than on the boundary's absolute pixel position, is what
+                # keeps a 1px nudge from reading as "jump to whatever
+                # name_scale this pixel would imply" in that case -- and
+                # matches how the boundary already behaves under the same
+                # clamp when driven from the Name slider instead.
+                delta_scale = (event.x - drag["start_x"]) / drag["k"]
+                self.set_slider_value("name", drag["start_name_scale"] + delta_scale)
+            self.request_render()
+            return
+        if self.column_boundary_drag is not None:
+            self.update_column_boundary_drag(self.column_boundary_drag, event.x)
+            self.request_render()
+            return
         if self.resize_drag:
             sx, sy, start_w, start_h, start_x, start_y = self.resize_origin
             edge = self.active_resize_edge
@@ -174,6 +212,12 @@ class InteractionMixin:
             # ButtonRelease can otherwise land on the main window underneath and
             # fire whatever's at that position (e.g. opening a talent's link).
             self.suppress_next_click = False
+            return
+        if self.name_boundary_drag is not None:
+            self.name_boundary_drag = None
+            return
+        if self.column_boundary_drag is not None:
+            self.column_boundary_drag = None
             return
         if self.resize_drag:
             self.resize_drag = False
@@ -266,13 +310,16 @@ class InteractionMixin:
         return "break"
 
     def on_motion(self, event):
-        if self.resize_drag or self.slider_drag or self.drag_origin is not None:
+        if (self.resize_drag or self.slider_drag or self.drag_origin is not None
+                or self.name_boundary_drag is not None or self.column_boundary_drag is not None):
             return
         x, y = event.x, event.y
         edge = "se" if self._in_rect(x, y, self.resize_grip_rect()) else self.resize_edge(x, y)
         row_key, row = self._hit_row(x, y)
         if edge:
             cursor = self._RESIZE_CURSORS[edge]
+        elif self.name_boundary_hit(x, y) is not None or self.column_boundary_hit(x, y) is not None:
+            cursor = "size_we"
         elif (self.slider_hit(x, y)
               or any(self._in_rect(x, y, r) for r in self.top_button_rects().values())
               or self._in_rect(x, y, self.refresh_btn_rect())

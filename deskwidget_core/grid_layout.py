@@ -54,6 +54,18 @@ TITLE_COL_WIDTH = 420
 # the grid/clock content has to work with.
 RIGHT_PADDING = 40
 
+# Narrowest a title-view column may be dragged to via column_boundary_hit()'s
+# resize handle -- keeps a dragged-thin column from squeezing its neighbor's
+# name+ticker row into nothing. Well below TITLE_COL_WIDTH (which governs how
+# many *equal* columns compute_grid() starts with) since a manually narrowed
+# column is a deliberate trade against its neighbor, not something the layout
+# search itself would ever pick.
+MIN_TITLE_COLUMN_WIDTH = 200
+# Pointer distance (px) within which a click/hover counts as "on" a
+# draggable column or name/title boundary, shared by both hit-test methods so
+# neither one's grab zone is silently narrower than the other's.
+BOUNDARY_HIT_TOLERANCE = 6
+
 # row_height/divider_height at grid_scale==1 -- the size build_grid_layout()
 # is called with whenever a caller (fit_height(), compute_grid()'s "natural
 # size" probe) just wants the grid's unscaled footprint, before compute_grid()
@@ -458,18 +470,29 @@ class GridMixin:
         return y
 
     def _layout_talent_section(self, layout_items, y, margin, available, num_cols,
-                                row_height, divider_height, units):
+                                row_height, divider_height, units, column_fractions=None):
         # Appends each unit's divider/rows (and, on the "All" tab, its
         # shaded background band) to layout_items and returns the y
         # position just below the talent grid.
         #
-        # Both views lay out in num_cols columns of equal width; they differ
-        # only in how wide a column has to be before another one fits (see
+        # Both views lay out in num_cols columns; they differ only in how
+        # wide a column has to be before another one fits (see
         # grid_col_width()), since a title-view row carries the program-title
         # ticker to the right of the name and so needs far more of the panel
-        # than a bare name does.
+        # than a bare name does. Columns are equal width by default, but the
+        # title view lets the user drag a column boundary (see
+        # column_boundary_hit()/the interaction-layer drag handlers), which
+        # stores its own per-column fractions of `available` in
+        # self.column_widths -- passed in here as column_fractions so this
+        # method never has to know where they came from.
         unit_cols = num_cols
-        unit_col_width = available / num_cols
+        fractions = column_fractions or [1.0 / num_cols] * num_cols
+        col_widths_px = [available * f for f in fractions]
+        col_x = []
+        cursor = margin
+        for w in col_widths_px:
+            col_x.append(cursor)
+            cursor += w
         group_position = 0
         for unit, indices in units.items():
             # On the "All" tab each unit is a whole production (see
@@ -489,8 +512,8 @@ class GridMixin:
             y += divider_height
             col = 0
             for index in indices:
-                layout_items.append({"type": "talent", "x": margin + col * unit_col_width, "y": y,
-                              "w": unit_col_width, "index": index, "h": row_height})
+                layout_items.append({"type": "talent", "x": col_x[col], "y": y,
+                              "w": col_widths_px[col], "index": index, "h": row_height})
                 col += 1
                 if col == unit_cols:
                     col = 0
@@ -510,7 +533,8 @@ class GridMixin:
 
     def build_grid_layout(self, row_height, divider_height, num_cols=None,
                            clock_row_height=None, clock_divider_height=None,
-                           clock_layout=None, targets=None, states=None, titles=None):
+                           clock_layout=None, targets=None, states=None, titles=None,
+                           column_fractions=None):
         # Shared by render() (drawing) and click() (hit-testing) so the two never
         # drift apart. Column count grows with the window so widening reflows more
         # columns in rather than just stretching 3. Talents are grouped by unit
@@ -528,7 +552,12 @@ class GridMixin:
         # columns than natural_cols — otherwise the freed-up columns would
         # just sit empty on the right instead of giving compute_grid() a
         # wider (and therefore taller-scaling) pitch to size the shared label
-        # font against.
+        # font against. column_fractions overrides that equal split with the
+        # title view's own per-column widths (see column_boundary_hit()) --
+        # left None by every candidate probe inside compute_grid()'s
+        # column-count search, which must keep assuming an equal split so a
+        # manual resize can't skew which num_cols that search picks; only its
+        # own final build (past the search) passes the real fractions.
         margin = GRID_MARGIN
         available = self.width - margin - RIGHT_PADDING
         natural_cols = max(1, int(available // self.grid_col_width()))
@@ -580,8 +609,24 @@ class GridMixin:
         y = self._layout_clock_section(layout_items, y, margin, available, clock_col_cap,
                                         clock_row_height, clock_divider_height, clock_layout)
         y = self._layout_talent_section(layout_items, y, margin, available, num_cols,
-                                         row_height, divider_height, units)
+                                         row_height, divider_height, units, column_fractions)
         return layout_items, y
+
+    def _effective_column_fractions(self, num_cols):
+        # self.column_widths is a user-dragged list of per-column fractions
+        # of `available` (see column_boundary_hit()/the interaction-layer
+        # drag handlers) -- but only for exactly the column count it was
+        # dragged at. A window resize/tab switch that changes num_cols makes
+        # a stale list meaningless (its i-th entry no longer corresponds to
+        # any particular column), so a length mismatch here is what "reset to
+        # equal on a column-count change" (the deliberately simple choice --
+        # no attempt to carry old ratios across a changed column count)
+        # actually reduces to: falling back to an equal split rather than
+        # applying entries that no longer line up with anything on screen.
+        widths = self.column_widths
+        if widths is not None and len(widths) == num_cols:
+            return widths
+        return [1.0 / num_cols] * num_cols
 
     def _widest_fit(self, labels, max_label_width, bold=True):
         # Largest integer font size at/above 16 for which every label in
@@ -727,9 +772,16 @@ class GridMixin:
         # invalidate a layout that doesn't depend on it, and every hit would
         # pay to hash a few hundred title strings.
         titles_key = tuple(sorted(titles.items())) if self._title_query_folded else ()
+        # column_widths (a user drag of a column boundary -- see
+        # column_boundary_hit()) has to be part of this key too: it changes
+        # what the final build_grid_layout() call below produces without
+        # touching any of the other fields, so leaving it out would let a
+        # drag's own render() call reuse a pre-drag cached layout.
+        column_widths_key = tuple(self.column_widths) if self.column_widths is not None else None
         cache_key = (self.width, self.height, self.text_scale, self.column_scale,
                      self.live_only, self._title_query_folded,
-                     tuple(targets), tuple(sorted(states.items())), titles_key)
+                     tuple(targets), tuple(sorted(states.items())), titles_key,
+                     column_widths_key)
         cached = getattr(self, "_grid_cache", None)
         if cached is not None and cached[0] == cache_key:
             return cached[1]
@@ -811,12 +863,19 @@ class GridMixin:
         # being centered, so any space still left over — a name too long to
         # spell out at any scale without wrapping — simply falls below the
         # grid instead of stretching to hide it.
-        layout_items, grid_end = self.build_grid_layout(row_height, divider_height, num_cols=num_cols,
-                                                         clock_row_height=clock_row_height,
-                                                         clock_divider_height=clock_divider_height,
-                                                         clock_layout=clock_layout,
-                                                         targets=targets, states=states,
-                                                         titles=titles)
+        # column_fractions is only meaningful in the title view -- see
+        # column_boundary_hit(), which never returns a hit outside it -- so
+        # self.column_widths is never applied to the plain grid even if it
+        # happens to carry a list left over from a title-view drag at the
+        # same column count.
+        layout_items, grid_end = self.build_grid_layout(
+            row_height, divider_height, num_cols=num_cols,
+            clock_row_height=clock_row_height,
+            clock_divider_height=clock_divider_height,
+            clock_layout=clock_layout,
+            targets=targets, states=states,
+            titles=titles,
+            column_fractions=self._effective_column_fractions(num_cols) if self.show_titles else None)
         result = (layout_items, row_height, divider_height, scale)
         self._grid_cache = (cache_key, result)
         return result
@@ -874,6 +933,79 @@ class GridMixin:
                     and geom["track_start"] <= x <= geom["track_end"]):
                 return key
         return False
+
+    def name_boundary_hit(self, x, y):
+        # Returns the row_info entry for the name/title boundary (the line
+        # between a talent's name and its now-playing ticker) the point is
+        # near, or None. rendering.py stores one of these per title row it
+        # draws (see the "name_boundary_x"/"name_boundary_k" keys in
+        # _draw_grid_rows()) -- this only reads that, so it can never see a
+        # boundary that isn't actually on screen right now.
+        for info in self.row_info.values():
+            boundary_x = info.get("name_boundary_x")
+            if boundary_x is None:
+                continue
+            top, bottom = info["rect"][1], info["rect"][3]
+            if abs(x - boundary_x) <= BOUNDARY_HIT_TOLERANCE and top <= y <= bottom:
+                return info
+        return None
+
+    def column_boundary_hit(self, x, y):
+        # Returns the index i of the column boundary (between title-view
+        # column i and i+1) the point is near, or None. Only the title view
+        # ever lays talents out in more than one such column (see
+        # grid_col_width()) -- the plain grid's columns are bare names with
+        # nothing worth dragging between them -- so this always misses there,
+        # even if self.column_widths still carries a title-view drag from
+        # before a tab switch.
+        if not self.show_titles:
+            return None
+        layout_items, row_height, _divider_height, _scale = self.compute_grid()
+        talent_items = [item for item in layout_items if item["type"] == "talent"]
+        xs = sorted({item["x"] for item in talent_items})
+        if len(xs) < 2:
+            return None
+        top = min(item["y"] for item in talent_items)
+        bottom = max(item["y"] + row_height for item in talent_items)
+        if not (top - BOUNDARY_HIT_TOLERANCE <= y <= bottom + BOUNDARY_HIT_TOLERANCE):
+            return None
+        for i, boundary_x in enumerate(xs[1:]):
+            if abs(x - boundary_x) <= BOUNDARY_HIT_TOLERANCE:
+                return i
+        return None
+
+    def start_column_boundary_drag(self, index):
+        # Snapshots the geometry a column-boundary drag needs so
+        # update_column_boundary_drag() (called on every pointer move) only
+        # ever does the cheap arithmetic below rather than re-deriving
+        # num_cols/fractions from compute_grid() on every one of those calls.
+        layout_items, _row_height, _divider_height, _scale = self.compute_grid()
+        num_cols = len({item["x"] for item in layout_items if item["type"] == "talent"})
+        margin = GRID_MARGIN
+        available = self.width - margin - RIGHT_PADDING
+        return {
+            "index": index,
+            "fractions": list(self._effective_column_fractions(num_cols)),
+            "margin": margin,
+            "available": available,
+        }
+
+    def update_column_boundary_drag(self, drag, x):
+        # Moves the boundary between column drag["index"] and its neighbor to
+        # (as closely as MIN_TITLE_COLUMN_WIDTH allows) the pointer's current
+        # x, by reapportioning just those two columns' fractions of
+        # `available` -- every other column's width is untouched, so dragging
+        # one boundary never reflows columns further down the row.
+        i = drag["index"]
+        fractions = drag["fractions"]
+        margin, available = drag["margin"], drag["available"]
+        left_edge = margin + available * sum(fractions[:i])
+        right_edge = margin + available * sum(fractions[:i + 2])
+        min_w = min(MIN_TITLE_COLUMN_WIDTH, (right_edge - left_edge) / 2)
+        boundary_x = max(left_edge + min_w, min(right_edge - min_w, x))
+        fractions[i] = (boundary_x - left_edge) / available
+        fractions[i + 1] = (right_edge - boundary_x) / available
+        self.column_widths = list(fractions)
 
     def _hit_row(self, x, y):
         for key, info in self.row_info.items():

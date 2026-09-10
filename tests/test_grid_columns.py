@@ -30,6 +30,7 @@ class FakeGrid(GridMixin):
         self.text_scale = 1.0
         self.column_scale = 1.0
         self.name_scale = 1.0
+        self.column_widths = None
         self.live_only = show_titles
         self._title_query_folded = ""
         self.active_production = "test"
@@ -122,3 +123,100 @@ def test_the_title_view_stays_single_column_when_a_row_needs_the_whole_width():
     widget = FakeGrid(talents=40, width=700, height=1000, show_titles=True)
 
     assert widget.talent_columns() == 1
+
+
+def _talent_column_starts(widget):
+    layout_items, _row_height, _divider_height, _scale = widget.compute_grid()
+    return sorted({item["x"] for item in layout_items if item["type"] == "talent"})
+
+
+def test_column_boundary_hit_finds_the_line_between_two_columns():
+    widget = FakeGrid(talents=40, width=1900, height=1000, show_titles=True)
+    layout_items, _row_height, _divider_height, _scale = widget.compute_grid()
+    talent_items = [item for item in layout_items if item["type"] == "talent"]
+    xs = sorted({item["x"] for item in talent_items})
+    assert len(xs) > 1
+    boundary_x = xs[1]
+    row_y = min(item["y"] for item in talent_items) + 2
+
+    assert widget.column_boundary_hit(boundary_x, row_y) == 0
+    assert widget.column_boundary_hit(boundary_x + 50, row_y) is None
+
+
+def test_column_boundary_hit_is_none_outside_the_title_view():
+    # The plain grid's columns are bare names -- nothing worth dragging
+    # between them (see grid_col_width()) -- so this always misses there,
+    # regardless of where the pointer lands.
+    widget = FakeGrid(talents=40, width=1900, height=1000, show_titles=False)
+
+    assert widget.column_boundary_hit(500, 300) is None
+
+
+def test_dragging_a_column_boundary_only_resizes_its_two_neighbors():
+    widget = FakeGrid(talents=40, width=1900, height=1000, show_titles=True)
+    xs = _talent_column_starts(widget)
+    assert len(xs) >= 3
+
+    drag = widget.start_column_boundary_drag(0)
+    widget.update_column_boundary_drag(drag, xs[1] + 80)
+
+    new_xs = _talent_column_starts(widget)
+    assert new_xs[0] == xs[0]
+    assert new_xs[1] == pytest.approx(xs[1] + 80, abs=1)
+    # Every boundary past the dragged pair is untouched: the two columns
+    # after it keep both their original width and position.
+    assert new_xs[2:] == pytest.approx(xs[2:], abs=1)
+
+
+def test_a_column_boundary_drag_cannot_squeeze_a_column_below_the_minimum():
+    widget = FakeGrid(talents=40, width=1900, height=1000, show_titles=True)
+    xs = _talent_column_starts(widget)
+
+    drag = widget.start_column_boundary_drag(0)
+    # Dragged far past the neighbor's own right edge -- clamped rather than
+    # collapsing column 1 to nothing or inverting the two columns' order.
+    widget.update_column_boundary_drag(drag, xs[-1] + 5000)
+
+    new_xs = _talent_column_starts(widget)
+    assert new_xs[1] - new_xs[0] >= grid_layout.MIN_TITLE_COLUMN_WIDTH - 1
+
+
+def test_column_widths_reset_to_equal_when_the_column_count_changes():
+    widget = FakeGrid(talents=40, width=1900, height=1000, show_titles=True)
+    xs = _talent_column_starts(widget)
+    drag = widget.start_column_boundary_drag(0)
+    widget.update_column_boundary_drag(drag, xs[1] + 80)
+    assert widget.column_widths is not None
+
+    # Narrow enough to force a single column (same window used by the
+    # single-column test above) -- the dragged ratios no longer correspond
+    # to anything on screen, so they're simply not applied.
+    widget.width = 700
+    new_xs = _talent_column_starts(widget)
+    assert len(new_xs) == 1
+
+
+def test_plain_grid_never_applies_a_title_view_column_drag():
+    widget = FakeGrid(talents=400, width=1600, height=900, show_titles=False)
+    xs = _talent_column_starts(widget)
+    assert len(xs) > 2
+    # A column count that happens to match a list left over from the title
+    # view (e.g. after switching tabs) still shouldn't skew the plain grid's
+    # always-equal columns.
+    widget.column_widths = [0.5] + [0.5 / (len(xs) - 1)] * (len(xs) - 1)
+
+    new_xs = _talent_column_starts(widget)
+    widths = [b - a for a, b in zip(new_xs, new_xs[1:])]
+    assert all(w == pytest.approx(widths[0], abs=1) for w in widths)
+
+
+def test_effective_column_fractions_falls_back_to_equal_split():
+    widget = FakeGrid(talents=10, width=1000, height=800, show_titles=True)
+
+    assert widget._effective_column_fractions(3) == pytest.approx([1 / 3] * 3)
+
+    widget.column_widths = [0.2, 0.3, 0.5]
+    assert widget._effective_column_fractions(3) == [0.2, 0.3, 0.5]
+    # Sized for the wrong column count -- ignored, same as a stale drag after
+    # a resize (see test_column_widths_reset_to_equal_when_the_column_count_changes).
+    assert widget._effective_column_fractions(4) == pytest.approx([0.25] * 4)

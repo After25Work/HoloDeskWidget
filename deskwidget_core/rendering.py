@@ -494,7 +494,7 @@ class RenderingMixin:
                 tooltip_text = display_name
             else:
                 tooltip_text = None
-            self.row_info[("talent", name)] = {
+            row_entry = {
                 "rect": (x, y, x + item["w"], y + row_height),
                 "clickable": True,
                 "tooltip": tooltip_text,
@@ -502,12 +502,48 @@ class RenderingMixin:
                 "copy_title": title,
             }
             if title:
+                # name_boundary_x is where the name lane actually ends on
+                # screen (the shared lane width above); name_boundary_k lets
+                # a drag on that boundary (see grid_layout.name_boundary_hit)
+                # invert a desired pixel width back to a name_scale, since
+                # the pre-shared label_area_w this row was first built with
+                # (e["label_area_w"] above) is exactly name_scale * that
+                # row's own name-lane rate -- see the name/title split math
+                # by label_area_w earlier in this loop. Using this row's own
+                # rate (not some other row's) matters once title-view columns
+                # can differ in width (see column_boundary_hit()): a wide
+                # column's name lane grows faster per unit of name_scale than
+                # a narrow one's.
+                row_entry["name_boundary_x"] = x + label_area_w
+                row_entry["name_boundary_k"] = e["label_area_w"] / self.name_scale
+            self.row_info[("talent", name)] = row_entry
+            if title:
                 ticker_gap = 10
                 ticker_x = x + label_area_w + ticker_gap
                 ticker_w = item["w"] - label_area_w - ticker_gap
                 ticker_font = font(max(2, round(label_font.size * 0.85)), False)
                 pending_tickers.append((name, ticker_x, y, ticker_w, row_height, title, ticker_font))
+        self._draw_column_boundaries(draw, colors, talent_entries)
         return grid_layout, row_height, pending_tickers
+
+    def _draw_column_boundaries(self, draw, colors, talent_entries):
+        # A thin guide line at each title-view column's edge, so the drag
+        # handle column_boundary_hit() adds has something to find by eye
+        # (unlike the name/title split, there is no slider for this one to
+        # fall back on). Only the title view ever lays talents into more
+        # than one such column -- see grid_col_width() -- so this draws
+        # nothing on the plain grid, where there'd be no boundary worth
+        # marking between one bare-name column and the next.
+        if not self.show_titles or not talent_entries:
+            return
+        column_x = sorted({e["item"]["x"] for e in talent_entries})
+        if len(column_x) < 2:
+            return
+        y_top = min(e["item"]["y"] for e in talent_entries)
+        y_bottom = max(e["item"]["y"] + e["item"]["h"] for e in talent_entries)
+        line_color = self.text_color(colors["divider"])
+        for x in column_x[1:]:
+            draw.line((x, y_top, x, y_bottom), fill=line_color, width=1)
 
     def _update_and_draw_tickers(self, image, colors, pending_tickers):
         if pending_tickers:
