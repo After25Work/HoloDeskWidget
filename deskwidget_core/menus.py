@@ -9,7 +9,7 @@ import webbrowser
 from . import appconfig, stream_log
 from .config import FONT_UI_REGULAR, FONT_UI_SMALL, FONT_UI_SMALL_BOLD, FONT_UI_SMALL_UNDERLINE, FONT_UI_TINY
 from .fonts import family_display_name, list_installed_fonts, set_font_family
-from .talents import ALL_PRODUCTION_ID, production_display_name
+from .talents import production_display_name
 from .theme import THEME_PALETTE
 
 # Dark text color used on top of the accent color, both for a hovered
@@ -340,18 +340,25 @@ class MenuMixin:
     def set_production_enabled(self, prod_id, enabled):
         if enabled:
             self.enabled_productions.add(prod_id)
-            if self.active_production == ALL_PRODUCTION_ID:
-                # Mirrors switch_production()'s ALL_PRODUCTION_ID branch: a
-                # production just re-added to the "All" view needs its slot
-                # created up front (on this, the main thread), not lazily
-                # from refresh_worker()'s background thread.
-                self._production_slot(prod_id)
+            # No slot pre-creation needed here any more: a newly re-enabled
+            # production starts deselected (see toggle_production_selection
+            # in widget.py), so its slot is created lazily whenever it's
+            # actually selected.
         else:
             if len(self.enabled_productions) <= 1:
                 return False
             self.enabled_productions.discard(prod_id)
-            if self.active_production == prod_id:
-                self.switch_production(ALL_PRODUCTION_ID)
+            if prod_id in self.selected_productions:
+                self.selected_productions.discard(prod_id)
+                if not self.selected_productions:
+                    # The disabled production was the only one selected --
+                    # fall back to the merged view over everything still
+                    # visible, the same fallback switch_production(
+                    # ALL_PRODUCTION_ID) used to provide when the single
+                    # active production was disabled.
+                    self.selected_productions = {p["id"] for p in self._visible_productions()}
+                    for production in self._visible_productions():
+                        self._production_slot(production["id"])
         self.render()
         return True
 
