@@ -512,17 +512,20 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # Adding is always allowed; removing is refused (no-op) if it's the
         # only one currently selected (see the "never empty" invariant in
         # the design doc). "All": select every currently-visible production
-        # if that isn't already the full selection; if it already is, do
-        # nothing -- a deliberate consequence of that same invariant (there's
-        # no way to "deselect all" without leaving zero selected), not a bug.
+        # if that isn't already the full selection; if it already is, act as
+        # "deselect all" by collapsing back down to just the first visible
+        # production -- the closest thing to empty that the "never empty"
+        # invariant allows.
         focus_was_on_a_tab = self._focus_is_on_a_tab()
         if prod_id == ALL_PRODUCTION_ID:
-            visible_ids = {p["id"] for p in self._visible_productions()}
+            visible = self._visible_productions()
+            visible_ids = {p["id"] for p in visible}
             if self.selected_productions == visible_ids:
-                return
-            self.selected_productions = set(visible_ids)
-            for production in self._visible_productions():
-                self._production_slot(production["id"])
+                self.selected_productions = {visible[0]["id"]}
+            else:
+                self.selected_productions = set(visible_ids)
+                for production in visible:
+                    self._production_slot(production["id"])
         else:
             if prod_id not in self._productions_by_id:
                 return

@@ -42,9 +42,10 @@ one visible" guard in `set_production_enabled()`.
 - **`ALL_PRODUCTION_ID`** (the "All" tab): if `self.selected_productions` does not
   already equal the full set of currently-visible production ids
   (`{p["id"] for p in self._visible_productions()}`), set it to that full set
-  ("select all"). If it already equals that full set, do nothing — clicking "All"
-  again while everything is selected has no effect (confirmed with the user: this
-  is a deliberate consequence of the "never empty" invariant, not a bug).
+  ("select all"). If it already equals that full set, act as "deselect all" by
+  collapsing the selection down to just the first visible production
+  (`self._visible_productions()[0]["id"]`) — the closest thing to empty the
+  "never empty" invariant allows.
 
 Both branches, after changing the set, do the same follow-up work
 `switch_production()` does today: ensure a `_production_slot()` exists for every
@@ -54,12 +55,14 @@ newly-selected id, reset `focus_index`, `fit_height()` if `live_only`,
 ```python
 def toggle_production_selection(self, prod_id):
     if prod_id == ALL_PRODUCTION_ID:
-        visible_ids = {p["id"] for p in self._visible_productions()}
+        visible = self._visible_productions()
+        visible_ids = {p["id"] for p in visible}
         if self.selected_productions == visible_ids:
-            return
-        self.selected_productions = set(visible_ids)
-        for production in self._visible_productions():
-            self._production_slot(production["id"])
+            self.selected_productions = {visible[0]["id"]}
+        else:
+            self.selected_productions = set(visible_ids)
+            for production in visible:
+                self._production_slot(production["id"])
     else:
         if prod_id not in self._productions_by_id:
             return

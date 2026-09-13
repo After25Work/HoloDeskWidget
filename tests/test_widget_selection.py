@@ -1,6 +1,7 @@
 """LayeredWidget.toggle_production_selection()'s core invariants: toggling a
 real production on/off, refusing to drop the last selected one, and the
-"All" shortcut's select-all/no-op-when-already-full behavior. Driven through
+"All" shortcut's select-all/collapse-to-first-when-already-full behavior.
+Driven through
 a stub that assigns the real unbound method directly (toggle_production_selection
 lives on LayeredWidget itself, not on one of its mixins, so there's no mixin
 class to subclass the way FakeGrid/FakeMenu/FakeRefresh do elsewhere in this
@@ -80,10 +81,10 @@ def test_all_shortcut_selects_every_visible_production():
     assert set(widget.production_data) == {"a", "b", "c"}
 
 
-def test_all_shortcut_is_a_no_op_when_already_fully_selected():
-    widget = FakeSelection(["a", "b"], enabled=["a", "b"], selected=["a", "b"])
+def test_all_shortcut_collapses_to_first_visible_when_already_fully_selected():
+    widget = FakeSelection(["a", "b", "c"], enabled=["a", "b", "c"], selected=["a", "b", "c"])
 
     widget.toggle_production_selection(ALL_PRODUCTION_ID)
 
-    assert widget.selected_productions == {"a", "b"}
-    assert widget.refresh_calls == 0
+    assert widget.selected_productions == {"a"}
+    assert widget.refresh_calls == 1
