@@ -14,6 +14,13 @@ from deskwidget_core.grid_layout import GridMixin
 # about the group's left-to-right packing aren't also testing its wrapping.
 ONE_ROW_WIDTH = 1000
 
+# Narrow enough that even the three sliders active in any single view (see
+# GridMixin.slider_active()) wrap onto a second row. The app's real
+# MIN_WIDTH no longer forces this -- three blocks fit comfortably where four
+# used to need to wrap -- so wrapping itself is exercised with this
+# synthetic width instead.
+NARROW_WRAP_WIDTH = 480
+
 
 class FakeWidget(GridMixin):
     def __init__(self, width=MIN_WIDTH, height=600, column_scale=1.0,
@@ -30,12 +37,15 @@ class FakeWidget(GridMixin):
         return False
 
 
-def test_slider_row_carries_every_block_left_to_right_without_overlap():
+def test_slider_row_carries_every_active_block_left_to_right_without_overlap():
+    # show_titles=False (the FakeWidget default) makes "name" inactive --
+    # see GridMixin.slider_active() -- so it never reaches slider_geometry().
     geometry = FakeWidget(width=ONE_ROW_WIDTH).slider_geometry()
+    active_blocks = [(key, width) for key, width in grid_layout.SLIDER_BLOCKS if key != "name"]
 
-    assert list(geometry) == [key for key, _width in grid_layout.SLIDER_BLOCKS]
+    assert list(geometry) == [key for key, _width in active_blocks]
     previous_right = None
-    for key, block_width in grid_layout.SLIDER_BLOCKS:
+    for key, block_width in active_blocks:
         block = geometry[key]
         assert block["row"] == 0
         assert block["track_start"] == block["x"] + grid_layout.SLIDER_LABEL_OFFSET
@@ -47,6 +57,23 @@ def test_slider_row_carries_every_block_left_to_right_without_overlap():
     assert previous_right == ONE_ROW_WIDTH - 40
 
 
+@pytest.mark.parametrize("show_titles, hidden_key", [(False, "name"), (True, "width")])
+def test_slider_with_nothing_to_act_on_in_this_view_is_left_out_entirely(show_titles, hidden_key):
+    # Rather than drawing dimmed, the slider that doesn't apply to the
+    # current view (name/title split in the plain grid, column-pitch width
+    # in the title view) is simply not placed -- so it can't be hit-tested
+    # or dragged either (slider_hit() only ever looks at slider_geometry()).
+    widget = FakeWidget(width=ONE_ROW_WIDTH, show_titles=show_titles)
+    geometry = widget.slider_geometry()
+
+    assert hidden_key not in geometry
+    assert len(geometry) == len(grid_layout.SLIDER_BLOCKS) - 1
+    for row in range(widget.slider_rows()):
+        y = widget.slider_row_y() + row * grid_layout.SLIDER_ROW_PITCH
+        for x in range(0, widget.width):
+            assert widget.slider_hit(x, y) != hidden_key
+
+
 def test_slider_row_fits_inside_the_panel_at_minimum_width():
     geometry = FakeWidget().slider_geometry()
 
@@ -55,10 +82,11 @@ def test_slider_row_fits_inside_the_panel_at_minimum_width():
 
 
 def test_sliders_too_wide_for_one_row_wrap_onto_another():
-    # Four slider blocks no longer fit side by side at MIN_WIDTH; they wrap
-    # rather than run off the panel's left edge (or shrink every track for
-    # every window size to serve the narrowest one).
-    narrow = FakeWidget(width=MIN_WIDTH)
+    # The three sliders active in one view no longer fit side by side at
+    # NARROW_WRAP_WIDTH; they wrap rather than run off the panel's left edge
+    # (or shrink every track for every window size to serve the narrowest
+    # one).
+    narrow = FakeWidget(width=NARROW_WRAP_WIDTH)
 
     assert narrow.slider_rows() > 1
     assert FakeWidget(width=ONE_ROW_WIDTH).slider_rows() == 1
@@ -75,7 +103,7 @@ def test_sliders_too_wide_for_one_row_wrap_onto_another():
 
 
 def test_wrapped_slider_rows_push_the_search_row_and_grid_down():
-    narrow, wide = FakeWidget(width=MIN_WIDTH), FakeWidget(width=ONE_ROW_WIDTH)
+    narrow, wide = FakeWidget(width=NARROW_WRAP_WIDTH), FakeWidget(width=ONE_ROW_WIDTH)
 
     assert narrow.search_row_y() - narrow.slider_row_y() == pytest.approx(
         (wide.search_row_y() - wide.slider_row_y())

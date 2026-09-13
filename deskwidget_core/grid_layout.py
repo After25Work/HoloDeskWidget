@@ -307,12 +307,30 @@ class GridMixin:
     def refresh_btn_rect(self):
         return (38, self.height - 65, self.width - 44, self.height - 34)
 
+    def slider_active(self, key):
+        # "幅"/width is the plain grid's column-pitch multiplier -- it has
+        # nothing to act on in the title view, which sizes its columns by
+        # dragging a column boundary directly instead (see
+        # GridMixin.target_col_width()). "名前幅"/name is the reverse: the
+        # title view's name/title split, meaningless in the plain grid. Each
+        # is only ever relevant to one of the two mutually-exclusive views,
+        # so slider_geometry() below leaves the other one out of the row
+        # entirely rather than placing a control with nothing to do.
+        if key == "name":
+            return self.show_titles
+        if key == "width":
+            return not self.show_titles
+        return True
+
     def slider_geometry(self):
         # The sliders, right-justified as a group against the panel's right
         # edge — fixed (not width-proportional) block widths so each stays
         # readable at any window size, and packed right-to-left from
         # SLIDER_BLOCKS so a slider added at the front of that tuple leaves
-        # every existing one on the exact pixels it already occupied.
+        # every existing one on the exact pixels it already occupied. Only
+        # the currently-active blocks (slider_active() above) are placed, so
+        # the group compacts to fill the gap left by whichever of name/width
+        # doesn't apply to the current view.
         #
         # A block that would cross SLIDER_AREA_LEFT starts another slider row
         # below instead of running off the panel, and grid_top()'s cascade
@@ -328,9 +346,11 @@ class GridMixin:
         # focusable_items()'s Tab order follows the visual reading order.
         top = self.slider_row_y()
         content_right = self.width - 40
+        active_blocks = [(key, block_width) for key, block_width in SLIDER_BLOCKS
+                         if self.slider_active(key)]
         placed = {}
         cursor, row = content_right, 0
-        for key, block_width in reversed(SLIDER_BLOCKS):
+        for key, block_width in reversed(active_blocks):
             left = cursor - block_width
             if left < SLIDER_AREA_LEFT and cursor < content_right:
                 # Doesn't fit beside what's already on this row -- and isn't
@@ -343,7 +363,7 @@ class GridMixin:
                            "track_start": left + SLIDER_LABEL_OFFSET,
                            "track_end": left + block_width}
             cursor = left - SLIDER_BLOCK_GAP
-        return {key: placed[key] for key, _block_width in SLIDER_BLOCKS}
+        return {key: placed[key] for key, _block_width in active_blocks}
 
     def slider_rows(self):
         # How many rows the slider group wrapped onto at this width -- what
