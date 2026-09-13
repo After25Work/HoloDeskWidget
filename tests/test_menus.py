@@ -10,13 +10,14 @@ from deskwidget_core.menus import MenuMixin
 
 
 class FakeMenu(MenuMixin):
-    def __init__(self, production_ids, enabled, selected):
+    def __init__(self, production_ids, enabled, selected, focus_on_tab=False):
         self.productions = [{"id": pid} for pid in production_ids]
         self.enabled_productions = set(enabled)
         self.selected_productions = set(selected)
         self.production_data = {}
         self.focus_index = None
         self.live_only = False
+        self._focus_on_tab = focus_on_tab
         self.render_calls = 0
         self.refresh_calls = 0
 
@@ -25,6 +26,9 @@ class FakeMenu(MenuMixin):
 
     def _production_slot(self, prod_id):
         return self.production_data.setdefault(prod_id, {"targets": []})
+
+    def _focus_is_on_a_tab(self):
+        return self._focus_on_tab
 
     def render(self):
         self.render_calls += 1
@@ -78,3 +82,21 @@ def test_enabling_a_production_does_not_add_it_to_the_selection():
 
     assert menu.enabled_productions == {"a", "b"}
     assert menu.selected_productions == {"a"}
+
+
+def test_disabling_a_selected_production_preserves_focus_already_on_a_tab():
+    menu = FakeMenu(["a", "b", "c"], enabled=["a", "b", "c"], selected=["a", "b"], focus_on_tab=True)
+    menu.focus_index = 2
+
+    menu.set_production_enabled("b", False)
+
+    assert menu.focus_index == 2
+
+
+def test_disabling_a_selected_production_clears_focus_not_on_a_tab():
+    menu = FakeMenu(["a", "b", "c"], enabled=["a", "b", "c"], selected=["a", "b"], focus_on_tab=False)
+    menu.focus_index = 5
+
+    menu.set_production_enabled("b", False)
+
+    assert menu.focus_index is None

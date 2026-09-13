@@ -113,16 +113,15 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
             # an id outside enabled_productions (refresh_worker() indexes
             # production_data[prod_id] directly for every selected id).
             fallback_id = next(p["id"] for p in self.productions if p["id"] in self.enabled_productions)
-            if legacy not in self._valid_production_ids():
-                self.selected_productions = {fallback_id}
-            elif legacy == ALL_PRODUCTION_ID:
+            if legacy == ALL_PRODUCTION_ID:
                 self.selected_productions = set(self.enabled_productions)
             elif legacy in self.enabled_productions:
                 self.selected_productions = {legacy}
             else:
-                # A real, valid production id -- but currently disabled.
-                # Selecting it would violate "selected implies visible",
-                # so this falls back the same way an unrecognized value does.
+                # Covers both an unrecognized/missing legacy value and a
+                # real-but-currently-disabled production id -- selecting the
+                # latter would violate "selected implies visible", so it
+                # falls back the same way an unrecognized value does.
                 self.selected_productions = {fallback_id}
         self.width, self.height = settings["width"], settings["height"]
         # Returned (not just applied to self) since _init_window() still
@@ -449,7 +448,10 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         return self._selected_targets()
 
     def _slot_field(self, key):
-        return self._merge_slots(self._selected_productions_list(), key)
+        selected = self._selected_productions_list()
+        if len(selected) == 1:
+            return self._production_slot(selected[0]["id"])[key]
+        return self._merge_slots(selected, key)
 
     @property
     def states(self):
@@ -515,7 +517,12 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # if that isn't already the full selection; if it already is, act as
         # "deselect all" by collapsing back down to just the first visible
         # production -- the closest thing to empty that the "never empty"
-        # invariant allows.
+        # invariant allows. Rejects anything else (an unknown id, or
+        # ALL_PRODUCTION_ID on a single-production build where it's not a
+        # valid selection target -- see _valid_production_ids()), the same
+        # guard the old switch_production() had.
+        if prod_id not in self._valid_production_ids():
+            return
         focus_was_on_a_tab = self._focus_is_on_a_tab()
         if prod_id == ALL_PRODUCTION_ID:
             visible = self._visible_productions()
@@ -527,8 +534,6 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
                 for production in visible:
                     self._production_slot(production["id"])
         else:
-            if prod_id not in self._productions_by_id:
-                return
             if prod_id in self.selected_productions:
                 if len(self.selected_productions) <= 1:
                     return

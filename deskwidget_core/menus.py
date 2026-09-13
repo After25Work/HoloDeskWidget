@@ -349,6 +349,7 @@ class MenuMixin:
                 return False
             self.enabled_productions.discard(prod_id)
             if prod_id in self.selected_productions:
+                focus_was_on_a_tab = self._focus_is_on_a_tab()
                 self.selected_productions.discard(prod_id)
                 if not self.selected_productions:
                     # The disabled production was the only one selected --
@@ -364,10 +365,13 @@ class MenuMixin:
                 # toggle_production_selection() does after any selection
                 # mutation, so a freshly-included production's talents (in
                 # the fallback branch above) actually get fetched instead of
-                # sitting unobserved for up to 60s, live_only's height
-                # refits if the row count changed, and a stale focus_index
-                # doesn't keep pointing at a row that just moved or vanished.
-                self.focus_index = None
+                # sitting unobserved for up to 60s and live_only's height
+                # refits if the row count changed. focus_index is only
+                # cleared when it wasn't already on a tab, same guard (and
+                # same reasoning -- production_tabs()'s geometry doesn't
+                # depend on the selection) as toggle_production_selection().
+                if not focus_was_on_a_tab:
+                    self.focus_index = None
                 if self.live_only:
                     self.fit_height()
                 self.refresh()

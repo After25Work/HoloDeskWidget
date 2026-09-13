@@ -14,8 +14,9 @@ from deskwidget_core.widget import LayeredWidget
 
 class FakeSelection:
     toggle_production_selection = LayeredWidget.toggle_production_selection
+    _valid_production_ids = LayeredWidget._valid_production_ids
 
-    def __init__(self, production_ids, enabled, selected):
+    def __init__(self, production_ids, enabled, selected, has_multiple=True):
         self.productions = [{"id": pid} for pid in production_ids]
         self._productions_by_id = {p["id"]: p for p in self.productions}
         self.enabled_productions = set(enabled)
@@ -23,6 +24,7 @@ class FakeSelection:
         self.production_data = {}
         self.focus_index = None
         self.live_only = False
+        self._has_multiple = has_multiple
         self.render_calls = 0
         self.refresh_calls = 0
 
@@ -31,6 +33,9 @@ class FakeSelection:
 
     def _production_slot(self, prod_id):
         return self.production_data.setdefault(prod_id, {"targets": []})
+
+    def has_multiple_productions(self):
+        return self._has_multiple
 
     def _focus_is_on_a_tab(self):
         return False
@@ -88,3 +93,26 @@ def test_all_shortcut_collapses_to_first_visible_when_already_fully_selected():
 
     assert widget.selected_productions == {"a"}
     assert widget.refresh_calls == 1
+
+
+def test_toggling_an_unknown_production_id_is_a_no_op():
+    widget = FakeSelection(["a", "b"], enabled=["a", "b"], selected=["a"])
+
+    widget.toggle_production_selection("nonexistent")
+
+    assert widget.selected_productions == {"a"}
+    assert widget.refresh_calls == 0
+
+
+def test_all_shortcut_is_rejected_on_a_single_production_build():
+    # Mirrors the old switch_production()'s guard: ALL_PRODUCTION_ID is only
+    # a valid target when has_multiple_productions() (see
+    # _valid_production_ids()) -- a single-production build has no "All" tab
+    # to click, so a stale/hand-edited settings.json shouldn't be able to
+    # select it either.
+    widget = FakeSelection(["a"], enabled=["a"], selected=["a"], has_multiple=False)
+
+    widget.toggle_production_selection(ALL_PRODUCTION_ID)
+
+    assert widget.selected_productions == {"a"}
+    assert widget.refresh_calls == 0
