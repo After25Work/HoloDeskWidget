@@ -555,11 +555,17 @@ class GridMixin:
                     col = 0
                     y += row_height
             if col != 0:
-                # This unit's last row didn't fill every column — let its last
-                # entry's label claim the now-empty trailing columns instead of
-                # being shrunk/truncated to a single column's width.
-                last_item = layout_items[-1]
-                last_item["w"] = margin + available - last_item["x"]
+                if not column_gap:
+                    # This unit's last row didn't fill every column — let its
+                    # last entry's label claim the now-empty trailing columns
+                    # instead of being shrunk/truncated to a single column's
+                    # width. Only the plain grid's bare-name columns do this:
+                    # the title view draws a visible gap/divider between
+                    # columns (see TITLE_COLUMN_GAP), so stretching a dangling
+                    # entry past its own column would run its name+ticker
+                    # straight through that divider instead of stopping at it.
+                    last_item = layout_items[-1]
+                    last_item["w"] = margin + available - last_item["x"]
                 y += row_height
             if self.active_production == ALL_PRODUCTION_ID:
                 layout_items.insert(band_index, {"type": "band", "y": band_start_y,

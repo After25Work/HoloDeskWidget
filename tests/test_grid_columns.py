@@ -125,6 +125,30 @@ def test_the_title_view_stays_single_column_when_a_row_needs_the_whole_width():
     assert widget.talent_columns() == 1
 
 
+def test_a_dangling_title_view_row_stays_inside_its_own_column():
+    # 40 talents over 3 columns leaves a final row with a single entry in
+    # column 0. The plain grid lets that kind of leftover entry claim the
+    # rest of the row's width (see _layout_talent_section()'s "now-empty
+    # trailing columns" note) since its columns are bare names with nothing
+    # drawn between them -- but the title view draws a visible gap/divider
+    # between columns (see TITLE_COLUMN_GAP), so the same stretch instead
+    # runs the row's name+ticker straight through that divider and into the
+    # next column's space.
+    widget = FakeGrid(talents=40, width=1900, height=1000, show_titles=True)
+    layout_items, _row_height, _divider_height, _scale = widget.compute_grid()
+    talent_items = [item for item in layout_items if item["type"] == "talent"]
+    col_xs = sorted({item["x"] for item in talent_items})
+    assert len(col_xs) > 1
+    last_row_y = max(item["y"] for item in talent_items)
+    dangling = [item for item in talent_items if item["y"] == last_row_y]
+    assert len(dangling) == 1
+    item = dangling[0]
+    own_column_index = col_xs.index(item["x"])
+    next_column_x = col_xs[own_column_index + 1]
+
+    assert item["x"] + item["w"] <= next_column_x
+
+
 def _talent_column_starts(widget):
     layout_items, _row_height, _divider_height, _scale = widget.compute_grid()
     return sorted({item["x"] for item in layout_items if item["type"] == "talent"})
