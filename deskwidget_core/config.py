@@ -74,15 +74,19 @@ DEFAULT_SETTINGS = {
     "text_scale": 1.0,
     "column_scale": 1.0,
     "name_scale": 1.0,
-    # Validated against the actually-loaded productions manifest in
-    # widget.py (not here) since that's data talents.py owns, not a plain
-    # window/UI preference like everything else in this file.
-    "active_production": "hololive",
     # Which productions show as tabs. Empty here means "no preference saved
     # yet" -- widget.py treats that (and any list left with nothing valid
     # after being checked against the loaded manifest) as "show everything",
     # so a first run or a stale/edited list never hides every tab.
     "enabled_productions": [],
+    # Which of the shown tabs are toggled on right now (multi-select; the
+    # merged view is whatever this set adds up to). Empty here means "no
+    # preference saved yet" -- same convention as enabled_productions above --
+    # and is resolved in widget.py._load_settings(), which also consults
+    # load_legacy_active_production() below for a settings.json saved before
+    # this list existed. Validated against the loaded manifest in widget.py,
+    # not here, same reasoning as enabled_productions.
+    "selected_productions": [],
 }
 
 
@@ -102,6 +106,10 @@ def _coerce_bool(value, default):
     # truthy non-bool (e.g. a hand-edited string "false") to True instead of
     # falling back to the default like every other coerced field here does.
     return value if isinstance(value, bool) else default
+
+
+def _coerce_string_list(value):
+    return [entry for entry in value if isinstance(entry, str)] if isinstance(value, list) else []
 
 
 def load_settings():
@@ -150,13 +158,22 @@ def load_settings():
     settings["name_scale"] = _coerce_clamped(
         settings["name_scale"], DEFAULT_SETTINGS["name_scale"], float,
         NAME_SCALE_MIN, NAME_SCALE_MAX)
-    settings["active_production"] = _coerce(
-        settings["active_production"], DEFAULT_SETTINGS["active_production"], str)
-    raw_enabled = settings["enabled_productions"]
-    settings["enabled_productions"] = (
-        [entry for entry in raw_enabled if isinstance(entry, str)]
-        if isinstance(raw_enabled, list) else [])
+    settings["enabled_productions"] = _coerce_string_list(settings["enabled_productions"])
+    settings["selected_productions"] = _coerce_string_list(settings["selected_productions"])
     return settings
+
+
+def load_legacy_active_production():
+    """One-off migration read for widget.py: a settings.json saved before
+    the multi-select production tabs feature stored a single
+    "active_production" key (a production id, or the "__all__" pseudo-id).
+    That key is no longer part of DEFAULT_SETTINGS/load_settings()'s own
+    return value -- this reads it directly, once, so an upgrading user's
+    prior single-tab choice can seed their new selected_productions instead
+    of silently resetting to the first loaded production."""
+    data = load_json(SETTINGS_PATH, {})
+    value = data.get("active_production") if isinstance(data, dict) else None
+    return value if isinstance(value, str) else None
 
 
 def save_settings(settings):

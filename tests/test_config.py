@@ -119,6 +119,35 @@ def test_load_settings_enabled_productions_defaults_to_empty_when_not_a_list():
     assert config.load_settings()["enabled_productions"] == []
 
 
+def test_load_settings_filters_non_string_selected_productions():
+    config.SETTINGS_PATH.write_text('{"selected_productions": ["hololive", 1, null, "nijisanji"]}', encoding="utf-8")
+
+    assert config.load_settings()["selected_productions"] == ["hololive", "nijisanji"]
+
+
+def test_load_settings_selected_productions_defaults_to_empty_when_not_a_list():
+    config.SETTINGS_PATH.write_text('{"selected_productions": "hololive"}', encoding="utf-8")
+
+    assert config.load_settings()["selected_productions"] == []
+
+
+def test_load_legacy_active_production_reads_saved_value():
+    config.SETTINGS_PATH.write_text('{"active_production": "nijisanji"}', encoding="utf-8")
+
+    assert config.load_legacy_active_production() == "nijisanji"
+
+
+@pytest.mark.parametrize("file_contents", ["not json", "{}", '{"active_production": 5}'])
+def test_load_legacy_active_production_returns_none_when_missing_or_invalid(file_contents):
+    config.SETTINGS_PATH.write_text(file_contents, encoding="utf-8")
+
+    assert config.load_legacy_active_production() is None
+
+
+def test_load_legacy_active_production_returns_none_when_file_absent():
+    assert config.load_legacy_active_production() is None
+
+
 def test_load_settings_clamps_column_scale_to_bounds():
     config.SETTINGS_PATH.write_text(
         f'{{"column_scale": {config.COLUMN_SCALE_MAX + 5}}}', encoding="utf-8")
