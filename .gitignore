@@ -12,3 +12,4 @@ __pycache__/
 settings.json
 tray_icon.ico
 stream_history.jsonl
+/.worktrees/
