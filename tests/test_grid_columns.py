@@ -279,9 +279,17 @@ def test_single_selected_production_draws_no_band():
 
 
 def test_multiple_selected_productions_draws_a_band_per_unit():
-    grid = FakeGrid(talents=6)
+    grid = FakeGrid(talents=4)
+    grid.targets = [
+        ("talent000", "slug0", "", "prod-a"),
+        ("talent001", "slug1", "", "prod-a"),
+        ("talent002", "slug2", "", "prod-b"),
+        ("talent003", "slug3", "", "prod-b"),
+    ]
     grid._selected = [{"id": "prod-a"}, {"id": "prod-b"}]
 
     layout_items, _row_height, _divider_height, _scale = grid.compute_grid()
 
-    assert any(item["type"] == "band" for item in layout_items)
+    bands = [item for item in layout_items if item["type"] == "band"]
+    assert len(bands) == 2
+    assert {band["position"] for band in bands} == {0, 1}

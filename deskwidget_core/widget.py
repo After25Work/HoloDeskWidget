@@ -95,23 +95,35 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.enabled_productions = set(saved_enabled) if saved_enabled else set(valid_ids)
         # Which of the shown tabs are toggled on (multi-select -- see
         # toggle_production_selection()). Resolution order: (1) the saved
-        # list, filtered to ids that still exist; (2) a settings.json saved
-        # before this list existed, via its single "active_production" value
-        # (the "__all__" pseudo-id there means "everything visible"); (3) the
-        # first loaded production, same last-resort as the old
-        # active_production fallback. Never left empty, same "never start
-        # with nothing shown" reasoning as enabled_productions above.
-        saved_selected = [pid for pid in settings["selected_productions"] if pid in valid_ids]
+        # list, filtered to ids that are currently enabled/visible; (2) a
+        # settings.json saved before this list existed, via its single
+        # "active_production" value (the "__all__" pseudo-id there means
+        # "everything visible"); (3) the first loaded production, same
+        # last-resort as the old active_production fallback. Never left
+        # empty, same "never start with nothing shown" reasoning as
+        # enabled_productions above.
+        saved_selected = [pid for pid in settings["selected_productions"] if pid in self.enabled_productions]
         if saved_selected:
             self.selected_productions = set(saved_selected)
         else:
             legacy = load_legacy_active_production()
+            # Falls back to the first *enabled* production, not just the
+            # first loaded one -- a selected id must always have a visible
+            # tab, since nothing ever creates a production_data slot for
+            # an id outside enabled_productions (refresh_worker() indexes
+            # production_data[prod_id] directly for every selected id).
+            fallback_id = next(p["id"] for p in self.productions if p["id"] in self.enabled_productions)
             if legacy not in self._valid_production_ids():
-                self.selected_productions = {self.productions[0]["id"]}
+                self.selected_productions = {fallback_id}
             elif legacy == ALL_PRODUCTION_ID:
                 self.selected_productions = set(self.enabled_productions)
-            else:
+            elif legacy in self.enabled_productions:
                 self.selected_productions = {legacy}
+            else:
+                # A real, valid production id -- but currently disabled.
+                # Selecting it would violate "selected implies visible",
+                # so this falls back the same way an unrecognized value does.
+                self.selected_productions = {fallback_id}
         self.width, self.height = settings["width"], settings["height"]
         # Returned (not just applied to self) since _init_window() still
         # needs settings["x"]/["y"] for the initial geometry() call below.
@@ -482,6 +494,19 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
             labels.append(bullet + display_name)
         return labels
 
+    def _focus_is_on_a_tab(self):
+        # Whether the keyboard focus ring is currently on a production tab
+        # -- checked (and, in toggle_production_selection(), preserved)
+        # before any selection mutation, since production_tabs()'s geometry
+        # depends only on enabled_productions, never on the selection, so a
+        # tab's own index in focusable_items() never moves across a toggle.
+        # Bounds-checked the same defensive way render() already treats
+        # focus_index, since it can be stale/out of range.
+        if self.focus_index is None:
+            return False
+        items = self.focusable_items()
+        return 0 <= self.focus_index < len(items) and items[self.focus_index]["kind"] == "tab"
+
     def toggle_production_selection(self, prod_id):
         # Real production tab: toggle its membership in the selection.
         # Adding is always allowed; removing is refused (no-op) if it's the
@@ -490,6 +515,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # if that isn't already the full selection; if it already is, do
         # nothing -- a deliberate consequence of that same invariant (there's
         # no way to "deselect all" without leaving zero selected), not a bug.
+        focus_was_on_a_tab = self._focus_is_on_a_tab()
         if prod_id == ALL_PRODUCTION_ID:
             visible_ids = {p["id"] for p in self._visible_productions()}
             if self.selected_productions == visible_ids:
@@ -507,7 +533,8 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
             else:
                 self.selected_productions.add(prod_id)
                 self._production_slot(prod_id)
-        self.focus_index = None
+        if not focus_was_on_a_tab:
+            self.focus_index = None
         if self.live_only:
             self.fit_height()
         self.request_render()

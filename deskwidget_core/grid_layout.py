@@ -522,6 +522,7 @@ class GridMixin:
             col_x.append(cursor)
             cursor += w
         group_position = 0
+        banded = len(self._selected_productions_list()) > 1
         for unit, indices in units.items():
             # With more than one production selected, each unit is a whole
             # production (see _selected_targets()'s retagging), so its rows
@@ -568,7 +569,7 @@ class GridMixin:
                     last_item = layout_items[-1]
                     last_item["w"] = margin + available - last_item["x"]
                 y += row_height
-            if len(self._selected_productions_list()) > 1:
+            if banded:
                 layout_items.insert(band_index, {"type": "band", "y": band_start_y,
                                                   "h": y - band_start_y, "position": group_position})
                 group_position += 1

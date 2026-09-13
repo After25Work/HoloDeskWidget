@@ -5,7 +5,7 @@ instead kick an immediate refresh for whatever's selected now. Driven
 through a stub (mirrors tests/test_menus.py's FakeMenu) rather than a real
 widget, since refresh_worker()/check_one() do real threading and network
 I/O that this repo has never unit-tested and this task isn't changing."""
-from deskwidget_core.refresh import RefreshMixin
+from deskwidget_core.refresh import REFRESH_INTERVAL_MS, RefreshMixin
 
 
 class FakeRefresh(RefreshMixin):
@@ -45,7 +45,7 @@ def test_refresh_complete_with_still_current_selection_updates_and_reschedules()
     assert widget.last_updated is not None
     assert widget.render_calls == 1
     assert widget.refresh_calls == 0
-    assert len(widget.rescheduled) == 1
+    assert widget.rescheduled == [(REFRESH_INTERVAL_MS, widget.refresh)]
 
 
 def test_refresh_complete_with_stale_selection_kicks_an_immediate_refresh():

@@ -39,8 +39,9 @@ THEMES = {
 
 
 def production_band_color(base_rgb, position, step=10):
-    # A per-production background band for the "All" tab (see the "band"
-    # layout item in grid_layout.py), shaded rather than colored: `position`
+    # A per-production background band for a merged multi-production view
+    # (see the "band" layout item in grid_layout.py), shaded rather than
+    # colored: `position`
     # is this production's place in the currently-rendered group order (not
     # its own identity). The first production is shaded so it reads as a
     # band against the plain panel background behind/around it, and every

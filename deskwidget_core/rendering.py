@@ -334,10 +334,11 @@ class RenderingMixin:
         unit_divider_font = font(max(2, round(10 * label_scale)), True)
         clock_label_size = max(2, round(16 * self.text_scale))
         clock_min_label_size = min(MIN_LABEL_SIZE, clock_label_size)
-        # "band" items only exist on the "All" tab (see build_grid_layout()'s
-        # own guard) -- on a single production's own tab every unit is just a
-        # sub-group (e.g. "JP") within that one production, so there's
-        # nothing to distinguish with a background shade.
+        # "band" items only exist when more than one production is merged
+        # into view (see _layout_talent_section()'s own guard) -- with
+        # exactly one production selected every unit is just a sub-group
+        # (e.g. "JP") within that one production, so there's nothing to
+        # distinguish with a background shade.
         band_base = self.tint(colors["panel"][:3])
         pending_tickers = []
         talent_entries = []

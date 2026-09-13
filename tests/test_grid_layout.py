@@ -36,6 +36,9 @@ class FakeWidget(GridMixin):
         # so every offset below is the fixed cascade from layout.TABS_TOP.
         return False
 
+    def _selected_productions_list(self):
+        return []
+
 
 def test_slider_row_carries_every_active_block_left_to_right_without_overlap():
     # show_titles=False (the FakeWidget default) makes "name" inactive --

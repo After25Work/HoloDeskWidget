@@ -15,7 +15,10 @@ class FakeMenu(MenuMixin):
         self.enabled_productions = set(enabled)
         self.selected_productions = set(selected)
         self.production_data = {}
+        self.focus_index = None
+        self.live_only = False
         self.render_calls = 0
+        self.refresh_calls = 0
 
     def _visible_productions(self):
         return [p for p in self.productions if p["id"] in self.enabled_productions]
@@ -25,6 +28,12 @@ class FakeMenu(MenuMixin):
 
     def render(self):
         self.render_calls += 1
+
+    def fit_height(self):
+        pass
+
+    def refresh(self):
+        self.refresh_calls += 1
 
 
 def test_disabling_a_production_outside_the_selection_leaves_selection_untouched():

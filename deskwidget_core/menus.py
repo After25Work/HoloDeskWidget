@@ -356,9 +356,21 @@ class MenuMixin:
                     # visible, the same fallback switch_production(
                     # ALL_PRODUCTION_ID) used to provide when the single
                     # active production was disabled.
-                    self.selected_productions = {p["id"] for p in self._visible_productions()}
-                    for production in self._visible_productions():
+                    remaining = self._visible_productions()
+                    self.selected_productions = {p["id"] for p in remaining}
+                    for production in remaining:
                         self._production_slot(production["id"])
+                # The merged view just changed -- same follow-up
+                # toggle_production_selection() does after any selection
+                # mutation, so a freshly-included production's talents (in
+                # the fallback branch above) actually get fetched instead of
+                # sitting unobserved for up to 60s, live_only's height
+                # refits if the row count changed, and a stale focus_index
+                # doesn't keep pointing at a row that just moved or vanished.
+                self.focus_index = None
+                if self.live_only:
+                    self.fit_height()
+                self.refresh()
         self.render()
         return True
 
