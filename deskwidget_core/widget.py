@@ -52,7 +52,8 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # that — switching back to a previously-viewed tab shows its
         # last-known state immediately instead of blanking to "unknown".
         # self.targets/states/channel_urls/live_urls/live_titles below are
-        # properties reading whichever slot is active_production right now.
+        # properties merging whichever slots are currently selected (see
+        # selected_productions/toggle_production_selection()).
         self.production_data = {}
         # Shared now-playing ticker clock — see the sync note in render().
         # ticker_progress tracks moving-time since the shared marquee last
@@ -239,11 +240,14 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         ]
 
     def _tray_tooltip_text(self):
-        # Reuses _merge_all_slots() (rather than hand-rolling the same merge)
-        # so this stays under the same per-slot lock that guards it against
+        # Reuses _merge_slots() (rather than hand-rolling the same merge) so
+        # this stays under the same per-slot lock that guards it against
         # check_one()'s background threads -- see the "lock" note in
-        # _production_slot().
-        merged_states = self._merge_all_slots("states")
+        # _production_slot(). Merges over every *visible* production, not
+        # just the currently selected ones: this is a global "how much is
+        # live across everything enabled" glance, independent of whatever
+        # tab happens to be showing.
+        merged_states = self._merge_slots(self._visible_productions(), "states")
         total_count = sum(len(self._production_slot(production["id"])["targets"])
                            for production in self._visible_productions())
         live_count = sum(1 for state in merged_states.values() if state == "live")
@@ -293,7 +297,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
                 "live_urls": {},
                 "live_titles": {},
                 # Guards every write into the four dict fields above from
-                # check_one()'s background threads against _merge_all_slots()
+                # check_one()'s background threads against _merge_slots()
                 # reading/merging them on the Tk main thread -- without this,
                 # a worker inserting/removing a key mid-.update() can raise
                 # "RuntimeError: dictionary changed size during iteration".
@@ -307,7 +311,7 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # more than one production (see has_multiple_productions()) -- a
         # single-production variant has no "All" tab to click, so a stale or
         # hand-edited settings.json shouldn't be able to switch into it either;
-        # _all_targets() would otherwise collapse that production's own
+        # _selected_targets() would otherwise collapse that production's own
         # per-unit grouping into one section while render() still draws the
         # single-production chrome.
         ids = set(self._productions_by_id)
@@ -328,20 +332,28 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         # reads as "everything" rather than one production among equals.
         return [ALL_PRODUCTION] + self._visible_productions()
 
-    def _aggregate_keys(self):
+    def _selected_productions_list(self):
+        # self._visible_productions() filtered down to the ones currently
+        # toggled on in the tab strip (see toggle_production_selection()) --
+        # what the merged view (targets/states/channel_urls/live_urls/
+        # live_titles below) actually aggregates, and what refresh.py refreshes.
+        return [p for p in self._visible_productions() if p["id"] in self.selected_productions]
+
+    def _aggregate_keys(self, productions):
         # Talent names aren't unique *across* productions (e.g. a custom.json
         # entry sharing a name with a talent in another enabled production),
         # but self.states/self.live_urls/self.channel_urls/self.live_titles
-        # and the tuples _all_targets() returns are both keyed by plain name.
-        # Disambiguate every name beyond the first production that uses it
-        # with its production id, so _merge_all_slots() and _all_targets()
-        # agree on one key per talent instead of two same-named talents from
-        # different productions silently overwriting each other's merged
-        # state/URLs (and open_target() misdirecting a click on one talent to
-        # the other's live stream/channel).
+        # and the tuples _selected_targets() returns are both keyed by plain
+        # name. Disambiguate every name beyond the first production (within
+        # `productions`, in order) that uses it with its production id, so
+        # _merge_slots() and _selected_targets() agree on one key per talent
+        # instead of two same-named talents from different productions
+        # silently overwriting each other's merged state/URLs (and
+        # open_target() misdirecting a click on one talent to the other's
+        # live stream/channel).
         seen = {}
         keys = {}
-        for production in self._visible_productions():
+        for production in productions:
             slot = self._production_slot(production["id"])
             for name, _slug, _url, _unit in slot["targets"]:
                 count = seen.get(name, 0)
@@ -349,15 +361,21 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
                 keys[(production["id"], name)] = name if count == 0 else f"{name} ({production['id']})"
         return keys
 
-    def _merge_all_slots(self, key):
+    def _merge_slots(self, productions, key):
         # Dict fields (states/channel_urls/live_urls/live_titles) merged
         # fresh on every access rather than cached, so this always reflects
         # whatever the per-production refresh threads have written into
         # self.production_data[prod_id] directly (see the note below) instead
-        # of a stale snapshot from whenever the "All" tab was last entered.
-        aggregate_keys = self._aggregate_keys()
+        # of a stale snapshot from whenever `productions` was last read.
+        # Takes an explicit production list rather than reading
+        # self._selected_productions_list() itself: _tray_tooltip_text()
+        # needs to merge over every *visible* production regardless of the
+        # current selection (a global "how much is live" glance, not tied to
+        # whatever tab happens to be showing), while the states/channel_urls/
+        # live_urls/live_titles properties below need the *selected* subset.
+        aggregate_keys = self._aggregate_keys(productions)
         merged = {}
-        for production in self._visible_productions():
+        for production in productions:
             slot = self._production_slot(production["id"])
             with slot["lock"]:
                 slot_values = dict(slot[key])
@@ -365,40 +383,44 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
                 merged[aggregate_keys[(production["id"], name)]] = value
         return merged
 
-    def _all_targets(self):
-        # Retags each talent's unit with its own production's display name,
-        # so build_grid_layout()'s per-unit grouping renders one category per
-        # production here instead of merging same-named units (e.g. "JP")
-        # across different productions into one section.
-        aggregate_keys = self._aggregate_keys()
+    def _selected_targets(self):
+        # Exactly one selected production keeps that production's own
+        # internal sub-grouping (e.g. "JP"/"ID"/"EN") untouched -- the same
+        # single-slot fast path the old single-tab view used. Two or more
+        # retags each talent's unit with its own production's display name
+        # instead, so build_grid_layout()'s per-unit grouping renders one
+        # category per production (see the shaded "band" it draws for that
+        # case) rather than merging same-named units across productions
+        # into one section.
+        selected = self._selected_productions_list()
+        if len(selected) == 1:
+            return self._production_slot(selected[0]["id"])["targets"]
+        aggregate_keys = self._aggregate_keys(selected)
         targets = []
-        for production in self._visible_productions():
+        for production in selected:
             label = production_display_name(production, self.lang)
             slot = self._production_slot(production["id"])
             targets.extend((aggregate_keys[(production["id"], name)], slug, url, label)
                             for name, slug, url, _unit in slot["targets"])
         return targets
 
-    # These five reflect whichever production is active_production right
-    # now, for every part of the app (rendering, click handling, tooltips,
-    # open_target) that only ever cares about "what's currently on screen".
-    # When active_production is ALL_PRODUCTION_ID they instead merge every
-    # real production's data on the fly (see _all_targets()/_merge_all_slots()
-    # above). The refresh machinery (refresh/refresh_worker/check_one)
+    # These five reflect whichever productions are currently selected in the
+    # tab strip (self.selected_productions -- see
+    # toggle_production_selection()), for every part of the app (rendering,
+    # click handling, tooltips, open_target) that only ever cares about
+    # "what's currently on screen". _selected_targets()/_merge_slots() above
+    # handle the one-selected-production case the same way a direct slot
+    # read used to. The refresh machinery (refresh/refresh_worker/check_one)
     # instead threads an explicit prod_id through and reads/writes
     # self.production_data[prod_id] directly, so a background refresh
-    # started before a tab switch can never write into the wrong tab's data
-    # once the user has switched away from it.
+    # started before a selection change can never write into the wrong
+    # slot's data once the user has changed the selection.
     @property
     def targets(self):
-        if self.active_production == ALL_PRODUCTION_ID:
-            return self._all_targets()
-        return self._production_slot(self.active_production)["targets"]
+        return self._selected_targets()
 
     def _slot_field(self, key):
-        if self.active_production == ALL_PRODUCTION_ID:
-            return self._merge_all_slots(key)
-        return self._production_slot(self.active_production)[key]
+        return self._merge_slots(self._selected_productions_list(), key)
 
     @property
     def states(self):
