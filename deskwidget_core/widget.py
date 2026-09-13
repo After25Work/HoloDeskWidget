@@ -13,6 +13,7 @@ from .config import (
     MIN_HEIGHT,
     MIN_WIDTH,
     MIN_WINDOW_ALPHA,
+    load_legacy_active_production,
     load_settings,
     save_settings,
 )
@@ -84,9 +85,6 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.text_scale = settings["text_scale"]
         self.column_scale = settings["column_scale"]
         self.name_scale = settings["name_scale"]
-        self.active_production = (settings["active_production"]
-            if settings["active_production"] in self._valid_production_ids()
-            else self.productions[0]["id"])
         # Which productions show as tabs (and count toward the "All" tab).
         # Falls back to every loaded production whenever the saved list is
         # empty or has nothing left that matches the current manifest, so a
@@ -95,6 +93,25 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         valid_ids = {p["id"] for p in self.productions}
         saved_enabled = [pid for pid in settings["enabled_productions"] if pid in valid_ids]
         self.enabled_productions = set(saved_enabled) if saved_enabled else set(valid_ids)
+        # Which of the shown tabs are toggled on (multi-select -- see
+        # toggle_production_selection()). Resolution order: (1) the saved
+        # list, filtered to ids that still exist; (2) a settings.json saved
+        # before this list existed, via its single "active_production" value
+        # (the "__all__" pseudo-id there means "everything visible"); (3) the
+        # first loaded production, same last-resort as the old
+        # active_production fallback. Never left empty, same "never start
+        # with nothing shown" reasoning as enabled_productions above.
+        saved_selected = [pid for pid in settings["selected_productions"] if pid in valid_ids]
+        if saved_selected:
+            self.selected_productions = set(saved_selected)
+        else:
+            legacy = load_legacy_active_production()
+            if legacy not in self._valid_production_ids():
+                self.selected_productions = {self.productions[0]["id"]}
+            elif legacy == ALL_PRODUCTION_ID:
+                self.selected_productions = set(self.enabled_productions)
+            else:
+                self.selected_productions = {legacy}
         self.width, self.height = settings["width"], settings["height"]
         # Returned (not just applied to self) since _init_window() still
         # needs settings["x"]/["y"] for the initial geometry() call below.
@@ -465,15 +482,31 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
             labels.append(bullet + display_name)
         return labels
 
-    def switch_production(self, prod_id):
-        if prod_id == self.active_production or prod_id not in self._valid_production_ids():
-            return
-        self.active_production = prod_id
+    def toggle_production_selection(self, prod_id):
+        # Real production tab: toggle its membership in the selection.
+        # Adding is always allowed; removing is refused (no-op) if it's the
+        # only one currently selected (see the "never empty" invariant in
+        # the design doc). "All": select every currently-visible production
+        # if that isn't already the full selection; if it already is, do
+        # nothing -- a deliberate consequence of that same invariant (there's
+        # no way to "deselect all" without leaving zero selected), not a bug.
         if prod_id == ALL_PRODUCTION_ID:
+            visible_ids = {p["id"] for p in self._visible_productions()}
+            if self.selected_productions == visible_ids:
+                return
+            self.selected_productions = set(visible_ids)
             for production in self._visible_productions():
                 self._production_slot(production["id"])
         else:
-            self._production_slot(prod_id)
+            if prod_id not in self._productions_by_id:
+                return
+            if prod_id in self.selected_productions:
+                if len(self.selected_productions) <= 1:
+                    return
+                self.selected_productions.discard(prod_id)
+            else:
+                self.selected_productions.add(prod_id)
+                self._production_slot(prod_id)
         self.focus_index = None
         if self.live_only:
             self.fit_height()
@@ -703,7 +736,8 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
             "text_scale": self.text_scale,
             "column_scale": self.column_scale,
             "name_scale": self.name_scale,
-            "active_production": self.active_production,
+            "selected_productions": sorted(
+                p["id"] for p in self.productions if p["id"] in self.selected_productions),
             "enabled_productions": [p["id"] for p in self.productions if p["id"] in self.enabled_productions],
         }
 
