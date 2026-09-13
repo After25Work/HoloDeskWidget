@@ -8,7 +8,7 @@ import time
 
 from . import layout
 from .strings import format_world_clock
-from .talents import ALL_PRODUCTION_ID, production_display_name
+from .talents import production_display_name
 
 # The status bar/slider row/grid all shift down together depending on how
 # many rows the production tab strip above them wraps to at the current
@@ -499,9 +499,9 @@ class GridMixin:
     def _layout_talent_section(self, layout_items, y, margin, available, num_cols,
                                 row_height, divider_height, units, column_fractions=None,
                                 column_gap=0):
-        # Appends each unit's divider/rows (and, on the "All" tab, its
-        # shaded background band) to layout_items and returns the y
-        # position just below the talent grid.
+        # Appends each unit's divider/rows (and, when more than one
+        # production is selected, its shaded background band) to
+        # layout_items and returns the y position just below the talent grid.
         #
         # Both views lay out in num_cols columns; they differ only in how
         # wide a column has to be before another one fits (see
@@ -523,9 +523,10 @@ class GridMixin:
             cursor += w
         group_position = 0
         for unit, indices in units.items():
-            # On the "All" tab each unit is a whole production (see
-            # _all_targets()'s retagging), so its rows get a shaded background
-            # band -- the divider text alone was too easy to miss when
+            # With more than one production selected, each unit is a whole
+            # production (see _selected_targets()'s retagging), so its rows
+            # get a shaded background band -- the divider text alone was too
+            # easy to miss when
             # several productions' rows sit back-to-back with the same plain
             # panel background. Recorded as its own layout item (inserted
             # before this unit's divider/rows below) rather than drawn ad hoc
@@ -567,7 +568,7 @@ class GridMixin:
                     last_item = layout_items[-1]
                     last_item["w"] = margin + available - last_item["x"]
                 y += row_height
-            if self.active_production == ALL_PRODUCTION_ID:
+            if len(self._selected_productions_list()) > 1:
                 layout_items.insert(band_index, {"type": "band", "y": band_start_y,
                                                   "h": y - band_start_y, "position": group_position})
                 group_position += 1
@@ -625,9 +626,9 @@ class GridMixin:
             clock_divider_height = divider_height
         units = {}
         # Read the targets/states properties once up front rather than once
-        # per loop iteration -- for the "All" tab (active_production ==
-        # ALL_PRODUCTION_ID) each read re-merges every visible production's
-        # dict from scratch (see _merge_all_slots()), so calling it inside
+        # per loop iteration -- merging more than one selected production
+        # (see _selected_productions_list()) re-merges every one of their
+        # dicts from scratch (see _merge_slots()), so calling it inside
         # this loop turned an O(N) pass into an O(N^2) one across a few
         # hundred talents, repeated for every candidate column count
         # compute_grid() tries and on every ~60ms ticker tick. compute_grid()
@@ -639,8 +640,8 @@ class GridMixin:
         states = self.states if states is None else states
         # Only consulted while a title query is active (see row_visible()),
         # and render()/compute_grid() only ever merge live_titles when the
-        # title view is on -- so this default never costs a "All"-tab merge
-        # on the plain grid view, where no row's visibility depends on it.
+        # title view is on -- so this default never costs a multi-production
+        # merge on the plain grid view, where no row's visibility depends on it.
         titles = self.live_titles if titles is None else titles
         for index, target in enumerate(targets):
             if not self.row_visible(target[0], states[target[0]], titles):
@@ -785,9 +786,9 @@ class GridMixin:
         available_height = max(1, available_height - clock_height)
 
         # Merged once here rather than left for each measure() candidate's
-        # build_grid_layout() call to re-fetch: on the "All" tab, self.targets
-        # /self.states each re-merge every visible production's dict from
-        # scratch (see _merge_all_slots()), so leaving that inside the
+        # build_grid_layout() call to re-fetch: with more than one production
+        # selected, self.targets/self.states each re-merge every one of their
+        # dicts from scratch (see _merge_slots()), so leaving that inside the
         # column-count search below repeated the merge once per candidate
         # (and again for the final build_grid_layout() call past the loop),
         # on every render -- including every ~60ms ticker tick. render()
@@ -951,8 +952,9 @@ class GridMixin:
         # render() already computes grid_layout/row_height/targets once for
         # its own drawing and passes them straight through here (for the
         # focus-ring rect) so a focused item doesn't force a second,
-        # redundant compute_grid() pass -- or, on the "All" tab, a second
-        # self.targets re-merge (see _merge_all_slots()) -- on every render,
+        # redundant compute_grid() pass -- or, when more than one production
+        # is selected, a second self.targets re-merge (see _merge_slots()) --
+        # on every render,
         # including every ~60ms ticker tick while a live-only now-playing
         # ticker is on screen. Every other caller (keypress handlers) has no
         # such value on hand and computes its own, which is fine since those
@@ -964,7 +966,7 @@ class GridMixin:
                 for key in visual_order if key in btn]
         for tab in self.production_tabs():
             items.append({"kind": "tab", "rect": tab["rect"],
-                         "activate": lambda t=tab["id"]: self.switch_production(t)})
+                         "activate": lambda t=tab["id"]: self.toggle_production_selection(t)})
         for key, geom in self.slider_geometry().items():
             rect = (geom["track_start"], geom["y"] - SLIDER_HIT_PAD_TOP,
                     geom["track_end"], geom["y"] + SLIDER_HIT_PAD_BOTTOM)

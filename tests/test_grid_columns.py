@@ -33,7 +33,7 @@ class FakeGrid(GridMixin):
         self.column_widths = None
         self.live_only = show_titles
         self._title_query_folded = ""
-        self.active_production = "test"
+        self._selected = [{"id": "test"}]
         # One unit, so the layout is a single divider plus a plain block of
         # rows -- the column count is then the only thing that decides how
         # many rows tall the grid comes out.
@@ -43,6 +43,9 @@ class FakeGrid(GridMixin):
 
     def has_multiple_productions(self):
         return False
+
+    def _selected_productions_list(self):
+        return self._selected
 
     def t(self, key, **kwargs):
         return key
@@ -265,3 +268,20 @@ def test_world_clock_text_still_advances_when_nothing_else_about_the_layout_chan
     # Sized for the wrong column count -- ignored, same as a stale drag after
     # a resize (see test_column_widths_reset_to_equal_when_the_column_count_changes).
     assert widget._effective_column_fractions(4) == pytest.approx([0.25] * 4)
+
+
+def test_single_selected_production_draws_no_band():
+    grid = FakeGrid(talents=6)
+
+    layout_items, _row_height, _divider_height, _scale = grid.compute_grid()
+
+    assert not any(item["type"] == "band" for item in layout_items)
+
+
+def test_multiple_selected_productions_draws_a_band_per_unit():
+    grid = FakeGrid(talents=6)
+    grid._selected = [{"id": "prod-a"}, {"id": "prod-b"}]
+
+    layout_items, _row_height, _divider_height, _scale = grid.compute_grid()
+
+    assert any(item["type"] == "band" for item in layout_items)
