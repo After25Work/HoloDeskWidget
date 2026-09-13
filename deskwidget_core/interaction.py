@@ -265,7 +265,7 @@ class InteractionMixin:
             else:
                 self.top_button_actions()[hit_button]()
         elif hit_tab is not None:
-            self.switch_production(hit_tab["id"])
+            self.toggle_production_selection(hit_tab["id"])
         elif self._in_rect(event.x, event.y, self.refresh_btn_rect()):
             self.refresh()
         elif self.title_query and self._in_rect(event.x, event.y, self.search_clear_rect()):
