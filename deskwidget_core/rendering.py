@@ -17,6 +17,7 @@ from . import appconfig
 from .fonts import emoji_font, font
 from .grid_layout import LABEL_PADDING, SEARCH_CLEAR_GAP, SEARCH_ICON_LANE
 from .strings import STRINGS, english_name
+from .talents import ALL_PRODUCTION_ID
 from .theme import KEY_COLOR, MIN_LABEL_SIZE, THEME_PALETTE, THEMES, production_band_color
 
 # Which STRINGS key labels each slider in grid_layout.SLIDER_BLOCKS. Kept
@@ -70,10 +71,10 @@ class RenderingMixin:
         btn = self.top_button_rects()
         self._draw_top_bar(draw, colors, accent, btn)
         self._draw_tabs(draw, colors, accent)
-        # Read once up front, not per access below -- for the "All" tab
-        # (active_production == ALL_PRODUCTION_ID) each of these properties
-        # re-merges every visible production's dict from scratch (see
-        # _merge_all_slots()), so repeating self.targets/self.states/
+        # Read once up front, not per access below -- merging more than one
+        # selected production, each of these properties re-merges every
+        # one of their dicts from scratch (see _merge_slots()), so
+        # repeating self.targets/self.states/
         # self.live_titles per talent row turned this render pass into an
         # O(N^2) one across a few hundred talents, on every ~60ms ticker tick.
         targets = self.targets
@@ -149,9 +150,12 @@ class RenderingMixin:
 
     def _draw_tabs(self, draw, colors, accent):
         tabs = self.production_tabs()
+        all_visible_selected = (
+            {p["id"] for p in self._visible_productions()} == self.selected_productions)
         for tab in tabs:
             rect = tab["rect"]
-            active = tab["id"] == self.active_production
+            active = (all_visible_selected if tab["id"] == ALL_PRODUCTION_ID
+                      else tab["id"] in self.selected_productions)
             tab_fill = accent if active else self.tint(colors["neutral_btn"]) + (255,)
             tab_text = self.text_color((24, 24, 31)) if active else self.text_color(colors["text"])
             draw.rounded_rectangle(rect, 7, fill=tab_fill)
@@ -275,9 +279,10 @@ class RenderingMixin:
         # targets/states were already merged in render() for the status bar/talent
         # loop -- passed straight through so compute_grid() doesn't re-merge them
         # a second time on the "All" tab (see the note in compute_grid() itself).
-        # live_titles is threaded through too, not just targets/states: on the
-        # "All" tab it is another _merge_all_slots() pass, and compute_grid()
-        # needs it to apply the title filter -- letting it re-merge here would
+        # live_titles is threaded through too, not just targets/states: with
+        # more than one production selected it is another _merge_slots() pass,
+        # and compute_grid() needs it to apply the title filter -- letting it
+        # re-merge here would
         # repeat that work on every ~60ms ticker tick.
         grid_layout, row_height, divider_height, grid_scale = self.compute_grid(
             targets, states, live_titles)
