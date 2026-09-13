@@ -14,7 +14,7 @@ from urllib.error import HTTPError
 
 from . import stream_log, youtube
 from .paths import log_error
-from .talents import ALL_PRODUCTION_ID, UNOBSERVED_STATE
+from .talents import UNOBSERVED_STATE
 
 # Some live titles borrow standalone combining marks/syllabics from scripts
 # no installed font here (Yu Gothic/Meiryo/MS Gothic/Segoe UI Emoji) has
@@ -72,29 +72,24 @@ class RefreshMixin:
     def refresh(self):
         if self.refresh_in_progress:
             return
-        prod_id = self.active_production
+        # Captured before spawning the worker thread, so a selection change
+        # mid-refresh can't mutate the set that thread is iterating.
+        prod_ids = frozenset(self.selected_productions)
         self.refresh_in_progress = True
         self.render()  # show the "refreshing" button state right away, not
                        # whenever the next tick/ticker render happens to land
-        threading.Thread(target=self.refresh_worker, args=(prod_id,), daemon=True).start()
+        threading.Thread(target=self.refresh_worker, args=(prod_ids,), daemon=True).start()
 
-    def refresh_worker(self, prod_id):
+    def refresh_worker(self, prod_ids):
         try:
-            # ALL_PRODUCTION_ID has no slot/manifest entry of its own — refresh
-            # every real production's slot instead, each against its own
-            # manifest's auto_resolve, so switching to the "All" tab keeps
-            # every talent (not just the previously-active production's) live.
-            if prod_id == ALL_PRODUCTION_ID:
-                # Slots for every visible production always exist by now --
-                # set_production_enabled() (main thread) creates one on the
-                # spot whenever a production is turned back on, the same way
-                # switch_production() does when the "All" tab is entered --
-                # so this can read production_data directly without racing a
-                # lazy _production_slot() create from this background thread.
-                jobs = [(production["id"], self.production_data[production["id"]], production.get("auto_resolve"))
-                        for production in self._visible_productions()]
-            else:
-                jobs = [(prod_id, self.production_data[prod_id], self._productions_by_id[prod_id].get("auto_resolve"))]
+            # Every id in `prod_ids` already has a slot in production_data by
+            # construction -- toggle_production_selection() (main thread)
+            # always calls _production_slot() for a newly-selected id before
+            # triggering this refresh, so this can read production_data
+            # directly without racing a lazy _production_slot() create from
+            # this background thread.
+            jobs = [(prod_id, self.production_data[prod_id], self._productions_by_id[prod_id].get("auto_resolve"))
+                    for prod_id in prod_ids]
             tasks = [(job_prod_id, slot, auto_resolve, name, slug, target)
                      for job_prod_id, slot, auto_resolve in jobs
                      for name, slug, target, _ in slot["targets"]]
@@ -113,7 +108,7 @@ class RefreshMixin:
                     self.check_one(*task)
 
             # A small fixed-size pool draining a queue, not one thread per
-            # talent: on the "All" tab across every production (hundreds of
+            # talent: selecting every production at once (hundreds of
             # talents for the VT variant) a thread-per-talent approach spawns
             # and tears down hundreds of OS threads every single refresh
             # cycle even though only 12 of them ever do real work at once.
@@ -135,26 +130,26 @@ class RefreshMixin:
                 worker.join()
         finally:
             try:
-                self.root.after(0, self.refresh_complete, prod_id)
+                self.root.after(0, self.refresh_complete, prod_ids)
             except (RuntimeError, tk.TclError):
                 # The window can be closed while a refresh is still in flight;
                 # self.root is already destroyed at that point, nothing to update.
                 pass
 
-    def refresh_complete(self, prod_id):
+    def refresh_complete(self, prod_ids):
         self.refresh_in_progress = False
         if self.tray is not None:
             self.tray.update_tooltip(self._tray_tooltip_text())
-        if prod_id == self.active_production:
+        if prod_ids == self.selected_productions:
             self.last_updated = time.strftime("%H:%M:%S")
             self.render()
             self.root.after(REFRESH_INTERVAL_MS, self.refresh)
         else:
-            # The user switched tabs while this (now-stale) production's
-            # refresh was still in flight — kick an immediate refresh for
-            # whatever's active now instead of waiting out this one's 60s
-            # cycle. That refresh's own refresh_complete() schedules the
-            # next periodic tick, so this doesn't create a second loop.
+            # The selection changed while this (now-stale) refresh was still
+            # in flight — kick an immediate refresh for whatever's selected
+            # now instead of waiting out this one's 60s cycle. That
+            # refresh's own refresh_complete() schedules the next periodic
+            # tick, so this doesn't create a second loop.
             self.refresh()
 
     @staticmethod
@@ -174,7 +169,7 @@ class RefreshMixin:
                     resolved = target
             else:
                 resolved = target
-            # Guards against _merge_all_slots() reading/merging this dict on
+            # Guards against _merge_slots() reading/merging this dict on
             # the Tk main thread at the same time (see the note by "lock" in
             # _production_slot()).
             with slot["lock"]:
@@ -246,8 +241,8 @@ class RefreshMixin:
     def check_one(self, prod_id, slot, auto_resolve, name, slug, target):
         # Operates on the explicit `slot` dict (self.production_data[prod_id])
         # rather than the self.targets/self.states/etc. properties, which
-        # always reflect whichever production is active_production *right
-        # now* — see the note above those properties.
+        # always reflect whichever productions are currently selected
+        # *right now* — see the note above those properties.
         states, live_urls, live_titles = slot["states"], slot["live_urls"], slot["live_titles"]
         lock = slot["lock"]
         # Snapshotted once up front: check_one() only ever lands on one of the
