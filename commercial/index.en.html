@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>About VTDeskWidget</title>
+<style>
+  :root {
+    --bg: #fdf6ec;
+    --card-bg: #ffffff;
+    --accent: #ff8fab;
+    --accent-dark: #e8628a;
+    --text: #4a3f35;
+    --text-sub: #8a7b6c;
+    --border: #f0dfc8;
+    --shot-bg: #12141c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", "Yu Gothic", "Meiryo", sans-serif;
+    line-height: 1.8;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px 60px; }
+
+  .lang-switch {
+    text-align: center;
+    padding: 10px 20px 0;
+    font-size: 0.85em;
+  }
+  .lang-switch a {
+    color: var(--text-sub);
+    text-decoration: none;
+  }
+  .lang-switch a.current {
+    color: var(--accent-dark);
+    font-weight: bold;
+  }
+
+  header.hero {
+    background: linear-gradient(135deg, #ffe3ec 0%, #fff6e5 100%);
+    padding: 50px 20px 40px;
+    text-align: center;
+    border-bottom: 6px solid var(--accent);
+  }
+  header.hero h1 {
+    font-size: 2.2em;
+    margin: 0 0 8px;
+    color: var(--accent-dark);
+    letter-spacing: 0.02em;
+  }
+  header.hero p.lead {
+    font-size: 1.05em;
+    color: var(--text);
+    max-width: 640px;
+    margin: 0 auto 20px;
+  }
+  header.hero img {
+    width: 220px;
+    max-width: 60%;
+    margin-top: 10px;
+    filter: drop-shadow(0 6px 10px rgba(0,0,0,0.12));
+  }
+
+  /* Live screenshots section */
+  .overview {
+    text-align: center;
+    margin: 46px 0 10px;
+  }
+  .overview .shot-frame {
+    display: inline-block;
+    background: var(--shot-bg);
+    padding: 10px;
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  }
+  .overview .shot-frame img {
+    display: block;
+    max-width: 100%;
+    width: 380px;
+    border-radius: 8px;
+  }
+  .overview .caption {
+    margin-top: 14px;
+    font-size: 0.88em;
+    color: var(--text-sub);
+  }
+  .strip {
+    display: flex;
+    justify-content: center;
+    margin: 22px 0 0;
+  }
+  .strip .shot-frame {
+    background: var(--shot-bg);
+    padding: 8px;
+    border-radius: 12px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  }
+  .strip .shot-frame img {
+    display: block;
+    max-width: 100%;
+    border-radius: 6px;
+  }
+
+  .notice {
+    background: #fff9ee;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 0.85em;
+    color: var(--text-sub);
+    margin: 30px 0;
+  }
+
+  h2.section-title {
+    text-align: center;
+    font-size: 1.5em;
+    color: var(--accent-dark);
+    margin: 50px 0 30px;
+    position: relative;
+  }
+  h2.section-title::after {
+    content: "";
+    display: block;
+    width: 60px;
+    height: 4px;
+    background: var(--accent);
+    border-radius: 2px;
+    margin: 10px auto 0;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 22px;
+    align-items: stretch;
+  }
+  @media (max-width: 680px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.04);
+  }
+  .card .top {
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+  }
+  .card .icon {
+    flex: 0 0 auto;
+    width: 72px;
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff6e9;
+    border-radius: 16px;
+  }
+  .card .icon img {
+    max-width: 56px;
+    max-height: 56px;
+    object-fit: contain;
+  }
+  .card .body h3 {
+    margin: 0 0 8px;
+    font-size: 1.05em;
+    color: var(--text);
+  }
+  .card .body p {
+    margin: 0;
+    font-size: 0.9em;
+    color: var(--text-sub);
+  }
+  .card .shot {
+    background: var(--shot-bg);
+    border-radius: 12px;
+    padding: 8px;
+    margin-top: auto;
+  }
+  .card .shot img {
+    display: block;
+    width: 100%;
+    border-radius: 6px;
+  }
+  .card .shot-label {
+    font-size: 0.72em;
+    color: var(--text-sub);
+    text-align: right;
+    margin-top: 6px;
+  }
+
+  .footer-note {
+    margin-top: 60px;
+    text-align: center;
+    font-size: 0.8em;
+    color: var(--text-sub);
+  }
+  .footer-note a { color: var(--accent-dark); }
+</style>
+</head>
+<body>
+
+<div class="lang-switch">
+  <a class="current" href="index.en.html">English</a> | <a href="index.html">日本語</a>
+</div>
+
+<header class="hero">
+  <h1>What can VTDeskWidget do?</h1>
+  <p class="lead">
+    A Windows desktop widget that stays on top of your screen and shows the live status of<br>
+    VTuber talents from hololive, NIJISANJI, Aogiri Highschool, VSPO!, Neo-Porte and more — all in one place, switchable by tab.
+  </p>
+  <img src="images/laptop_mascot.png" alt="Cute laptop character illustration">
+</header>
+
+<div class="wrap">
+
+  <div class="overview">
+    <div class="shot-frame">
+      <img src="images/shot_main_en.png" alt="VTDeskWidget's actual screen (hololive tab)">
+    </div>
+    <p class="caption">The real thing: tab switching, color-coded live status and world clocks, all in one window</p>
+
+    <div class="strip">
+      <div class="shot-frame">
+        <img src="images/shot_buttons_en.png" alt="Top-right control buttons">
+      </div>
+    </div>
+    <p class="caption">One-click controls in the top-right corner: LIVE filter, dark mode, theme color, language, always-on-top and more</p>
+  </div>
+
+  <h2 class="section-title">What it can do</h2>
+
+  <div class="grid">
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/tabs.png" alt="Tab switching"></div>
+        <div class="body">
+          <h3>Switch between productions with tabs</h3>
+          <p>Jump between hololive, NIJISANJI, Aogiri Highschool, VSPO!, Neo-Porte and more with a single click. An always-present "All" tab shows every talent at once.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/vtuber.png" alt="Stream status display"></div>
+        <div class="body">
+          <h3>See stream status at a glance</h3>
+          <p>Talents are color-coded as Live, Idle, or Error. Click a card to open the stream (or channel page) straight in your browser.</p>
+        </div>
+      </div>
+      <div class="shot"><img src="images/shot_main_en_crop.png" alt="Screenshot of the color-coded live status"></div>
+      <div class="shot-label">Actual screen</div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/laptop_mascot.png" alt="Translucent widget"></div>
+        <div class="body">
+          <h3>A translucent window that stays on your desktop</h3>
+          <p>An always-on-top, see-through window you can drag anywhere. Grab an edge or corner to resize it freely.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/filter.png" alt="LIVE filter"></div>
+        <div class="body">
+          <h3>LIVE filter shows only who's streaming now</h3>
+          <p>Narrow the list down to talents currently live, with stream titles scrolling by as a ticker.</p>
+        </div>
+      </div>
+      <div class="shot"><img src="images/shot_live_ticker.gif" alt="Animation of the LIVE filter ticker"></div>
+      <div class="shot-label">Actual screen (animated)</div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/worldclock.png" alt="World clock"></div>
+        <div class="body">
+          <h3>A world clock, right alongside the streams</h3>
+          <p>Shows the current time for zones like JST, WIB, UTC, EST and more. Add, remove, or relabel zones freely.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/palette.png" alt="Display customization"></div>
+        <div class="body">
+          <h3>Make it look the way you want</h3>
+          <p>Dark/light mode, theme color, font, display language (Japanese/English), background opacity and text size are all adjustable.</p>
+        </div>
+      </div>
+      <div class="shot"><img src="images/shot_menu_en_crop.png" alt="Right-click menu used for customization"></div>
+      <div class="shot-label">Actual screen (right-click menu)</div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/floppy.png" alt="Auto-saved settings"></div>
+        <div class="body">
+          <h3>Every setting saves itself</h3>
+          <p>Window position, size, and all your preferences are saved automatically and restored the next time you launch the app.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/gears.png" alt="Automatic channel resolution"></div>
+        <div class="body">
+          <h3>Channels resolve themselves (hololive)</h3>
+          <p>For the hololive tab, the app looks up each talent's YouTube channel from the official site on startup, keeping broken links to a minimum.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="notice">
+    * VTDeskWidget is an unofficial, fan-made tool created by an individual. It has no affiliation with hololive/hololive production, NIJISANJI/ANYCOLOR, Aogiri Highschool, VSPO!/Gemdisc, Neo-Porte, or any other talent or production referenced in the app, and is not endorsed by them.<br>
+    Windows only. An internet connection is required.
+  </div>
+
+  <p class="footer-note">
+    Illustrations: "<a href="https://www.irasutoya.com/" target="_blank" rel="noopener">Irasutoya</a>"　/　Screenshots: from VTDeskWidget itself<br>
+    VTDeskWidget (MIT License / source code only)
+  </p>
+
+</div>
+
+</body>
+</html>
