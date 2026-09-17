@@ -12,7 +12,7 @@ hololive所属タレントの配信状況を常時表示するWindowsデスク�
 - **常時前面表示できる半透明ウィジェット**: デスクトップに常駐する透過ウィンドウ。背景部分のドラッグで移動、端・角のドラッグでサイズ変更ができます。
 - **LIVEフィルタ**: 配信中のタレントだけに絞り込んで表示し、配信タイトルをティッカー(横スクロール)表示します。
 - **番組タイトル検索(インクリメンタルサーチ)**: スライダーの下の検索ボックスに文字を入れると、入力するたびに配信タイトルで絞り込まれます(大文字小文字は区別しません)。絞り込み中は該当タレントの配信タイトルが名前の横に表示され、ステータスバーの件数も「該当◯件」に切り替わります。`Ctrl+F`で検索ボックスへ移動、`Esc`または右側の×ボタンで解除できます。
-- **世界時計**: JST/WIB/UTC/EST/PSTの現在時刻をあわせて表示します。
+- **世界時計**: `clock_zones.json`で設定した時刻帯(初期値はアメリカ西海岸/アメリカ東海岸/イギリス/中央ヨーロッパ/ジャカルタ/日本の6種類)の地域名・現在時刻をあわせて表示します。ゾーンの追加・削除・ラベル変更・地域名変更はコードを触らずJSON編集だけで行えます。
 - **表示のカスタマイズ**: 最前面固定・ダークモード/ライトモード切替・テーマカラー(配色パレット)選択・表示言語(日本語/英語)切替を右上のボタンまたは右クリックメニューから操作できます。背景の透過度と文字サイズはスライダーで調整できます。文字幅(タレント名の列幅、LIVE表示時は名前と配信タイトルの分割位置)は「幅」スライダーで調整でき、広げると省略されていた長い名前が最後まで表示されます。
 - **設定の自動保存**: ウィンドウ位置・サイズ・言語・テーマなどの個人設定は`settings.json`に自動保存され、次回起動時に復元されます。
 - **チャンネル自動解決**: 起動時にhololive公式サイトのタレントページからYouTubeチャンネルを自動解決し、失敗した場合のみ`productions/hololive.json`の`channel_url`にフォールバックします。
@@ -52,12 +52,19 @@ LIVEフィルタ使用時は、配信中のタレントに絞り込んだ上で�
 
 - `start_widget_holo.py` — HoloDeskWidgetの起動エントリポイント(多重起動チェック→`deskwidget_core`のウィジェットをmainloop実行)
 - `deskwidget_core/` — 両アプリ共通のエンジンパッケージ(常駐・透過表示・ドラッグ移動対応のWin32レイヤードウィンドウ実装)
-  - `widget.py` — ウィンドウ本体(描画・イベント処理)
+  - `widget.py` — ウィンドウの状態管理本体。以下の各Mixinを合成してウィジェットを構成します
+  - `rendering.py` — Pillowによる描画(`render()`本体と各種描画ヘルパー)
+  - `interaction.py` — マウス/キーボードのイベント処理(ドラッグ移動・リサイズ・クリック判定・スライダー操作)
+  - `menus.py` — 右クリックメニュー・テーマパレット・フォント選択などのポップアップ
+  - `refresh.py` — バックグラウンド更新(タレントごとのワーカースレッド起動・チャンネル解決・配信状況取得)
+  - `search.py` — 番組タイトル検索(インクリメンタルサーチ)のロジックと検索ボックスの状態管理
+  - `layout.py` / `grid_layout.py` — ボタン列・タレントグリッドの配置計算。プロダクションが1つしかないvariant(Holo)ではタブ列自体が現れません
+  - `win32.py` — `widget.py`/`single_instance.py`/`tray.py`が共有するuser32/kernel32のctypesハンドルとargtypes/restype紐付けの薄いラッパー
+  - `entrypoint.py` — 多重起動チェック→ウィジェットのmainloop実行という共通の起動シーケンス(`start_widget_holo.py`/`start_widget_vt.py`から呼び出されます)
   - `config.py` — ウィンドウ既定値・`settings.json`の読み書き
   - `talents.py` — `productions/index.json`とプロダクションごとのタレント一覧JSONの読み込み
   - `youtube.py` — チャンネル解決・配信状況の取得(YouTube内部API/innertube経由)
-  - `theme.py` / `strings.py` / `fonts.py` — 配色・多言語文字列・フォント
-  - `layout.py` / `grid_layout.py` — ボタン列・タブ・タレントグリッドの配置計算
+  - `theme.py` / `strings.py` / `fonts.py` — 配色・多言語文字列・フォント(`strings.py`は`clock_zones.json`の読み込みも担当)
   - `paths.py` — パス解決とログ出力(サイズ上限付きローテーション)
   - `single_instance.py` — 多重起動防止(Win32ミューテックス)
   - `appconfig.py` — アプリ名・配色・バージョンなど、variantごとに異なる値の受け皿
@@ -67,13 +74,14 @@ LIVEフィルタ使用時は、配信中のタレントに絞り込んだ上で�
   - `profile.py` — アプリ名・アクセントカラー・バージョンなど`appconfig`に渡す設定値
   - `version.py` — バージョン番号(右クリックメニューに表示)
   - `productions/index.json` / `productions/hololive.json` — 表示対象タレントの一覧(hololive単独プロダクション)
+  - `clock_zones.json` — 世界時計のゾーン一覧(ラベル・UTCオフセット・日付の表記順・日本語/英語の地域名、任意で`dst`によるサマータイム自動切替も指定可)。直接編集で追加・削除・ラベル変更ができます
   - `docs/Readme.html` / `docs/Readme.en.html` — エンドユーザー向け使い方ガイド(リリースzipに同梱)
   - `docs/screenshots/` — 上記ガイドに埋め込むスクリーンショット・GIF
 - `start_widget_holo.bat` — ネイティブ版(Holo)の起動ランチャー
 - `build_widget.bat holo|vt` — PyInstallerで指定したvariantのexeをビルド
 - `find_python.bat` — `start_widget_holo.bat`/`build_widget.bat`共通のPython検出スクリプト
 - `release_widget.bat holo|vt` — ビルド＋配布用zip(`release/<AppName>-v<version>.zip`)の作成
-- `tools/capture_screenshots.py` / `capture_screenshots.bat` — `variants/holo/docs/screenshots/`内の画像・GIFを実際のウィジェットを操作して再撮影する開発者向けツール
+- `tools/capture_screenshots.py`(リポジトリルートの`capture_screenshots.bat`から起動) — `variants/holo/docs/screenshots/`内の画像・GIFを実際のウィジェットを操作して再撮影する開発者向けツール
 
 ## セットアップ
 
@@ -101,7 +109,7 @@ start_widget_holo.bat
 
 現在のバージョン: **1.0.2**
 
-`variants/holo/version.py` の `__version__` が唯一の管理箇所です(ウィジェットの右クリックメニューにも表示されます)。リリース時はこの値を手動で更新してください。`release_widget.bat holo` はこの値を読み取り、`build_widget.bat holo`(PyInstaller)でexeをビルドした上で、exe・`productions/`・`docs/Readme*.html` をまとめた `release/HoloDeskWidget-v<version>.zip` を作成します。
+`variants/holo/version.py` の `__version__` が唯一の管理箇所です(ウィジェットの右クリックメニューにも表示されます)。リリース時はこの値を手動で更新してください。`release_widget.bat holo` はこの値を読み取り、`build_widget.bat holo`(PyInstaller)でexeをビルドした上で、exe・`productions/`・`clock_zones.json`・`docs/Readme*.html` をまとめた `release/HoloDeskWidget-v<version>.zip` を作成します。
 
 ## リリース手順
 
@@ -109,7 +117,7 @@ start_widget_holo.bat
    ```bash
    python .claude/skills/release/scripts/bump_version.py holo <old_version> <new_version>
    ```
-2. `release_widget.bat holo` を実行します。内部で `build_widget.bat holo`(PyInstaller、要インストール)を呼び出して `dist/HoloDesk Widget.exe` をビルドし、exe・`productions/`・`docs/Readme.html`・`docs/Readme.en.html` を `release/HoloDeskWidget-v<version>.zip` にまとめます(`settings.json`やログなどの実行時生成ファイルは含まれません)。VTDeskWidget側は同じ手順を `vt` 引数で実行します(`.claude/skills/release/SKILL.md`参照)。
+2. `release_widget.bat holo` を実行します。内部で `build_widget.bat holo`(PyInstaller、要インストール)を呼び出して `dist/HoloDesk Widget.exe` をビルドし、exe・`productions/`・`clock_zones.json`・`docs/Readme.html`・`docs/Readme.en.html` を `release/HoloDeskWidget-v<version>.zip` にまとめます(`settings.json`やログなどの実行時生成ファイルは含まれません)。VTDeskWidget側は同じ手順を `vt` 引数で実行します(`.claude/skills/release/SKILL.md`参照)。
 3. 生成された `release/HoloDeskWidget-v<version>.zip` を配布します。`build/`・`dist/`・`release/` はgit管理対象外です。
 
 ## タレント一覧の更新

@@ -12,7 +12,7 @@ A Windows desktop widget that keeps the live-stream status of hololive talents v
 - **Always-on-top, semi-transparent desktop widget**: A persistent, transparent window you can drag by its background to move, and drag by its edges/corners to resize.
 - **LIVE filter**: Narrows the list down to only the talents currently live, and shows their stream titles as a scrolling ticker.
 - **Stream-title search (incremental)**: Type in the search box below the sliders and the list narrows to matching stream titles as you type (case-insensitive). While a filter is active each matching talent's stream title is shown beside their name and the status bar switches to a "matched" count. `Ctrl+F` jumps to the box; `Esc` or the × button beside it clears the filter.
-- **World clock**: Displays the current time in JST/WIB/UTC/EST/PST alongside the talent list.
+- **World clock**: Displays the region name and current time for a configurable list of zones (US West Coast/US East Coast/UK/Central Europe/Jakarta/Japan by default) alongside the talent list. Edit `clock_zones.json` to add, remove, or relabel zones (or rename their regions) without touching code.
 - **Display customization**: Toggle always-on-top, dark/light mode, theme color (palette), and display language (Japanese/English) from the top-right buttons or the right-click menu. Background opacity and text size are adjustable via sliders. A "Width" slider adjusts the text lane widths (the talent-name column pitch, and the name/stream-title split in the LIVE view), so widening it spells out long names that were previously truncated.
 - **Settings persistence**: Window position/size, language, theme, and other personal settings are saved automatically to `settings.json` and restored on the next launch.
 - **Automatic channel resolution**: On startup, resolves each talent's YouTube channel from the hololive official site's talent page, falling back to `channel_url` in `productions/hololive.json` only if that resolution fails.
@@ -52,12 +52,19 @@ This repository builds two apps -- HoloDeskWidget and its multi-production sibli
 
 - `start_widget_holo.py` — HoloDeskWidget's launch entry point (checks for duplicate instances → runs the `deskwidget_core` widget's mainloop)
 - `deskwidget_core/` — the engine package shared by both apps (Win32 layered-window implementation supporting always-on-top, transparency, and drag-to-move)
-  - `widget.py` — the window itself (drawing and event handling)
+  - `widget.py` — the window's state management; composes the mixins below into the widget
+  - `rendering.py` — Pillow-based drawing (the `render()` pass and its drawing helpers)
+  - `interaction.py` — mouse/keyboard event handling (drag-to-move, resize, click dispatch, slider dragging)
+  - `menus.py` — the right-click context menu, theme-color palette, and font picker popups
+  - `refresh.py` — background refresh (per-talent worker threads, channel resolution, live-status fetching)
+  - `search.py` — the incremental stream-title search logic and the search box's state
+  - `layout.py` / `grid_layout.py` — button row and talent-grid layout math. A variant with only one production (Holo) never shows the tab strip at all
+  - `win32.py` — the shared user32/kernel32 ctypes handles and argtypes/restype binding used by `widget.py`/`single_instance.py`/`tray.py`
+  - `entrypoint.py` — the shared startup sequence (checks for duplicate instances → runs the widget's mainloop), called from `start_widget_holo.py`/`start_widget_vt.py`
   - `config.py` — window defaults and `settings.json` read/write
   - `talents.py` — loads `productions/index.json` and each production's talent-list JSON
   - `youtube.py` — channel resolution and live-status detection (via YouTube's internal innertube API)
-  - `theme.py` / `strings.py` / `fonts.py` — colors, localized strings, and fonts
-  - `layout.py` / `grid_layout.py` — button row, tab strip, and talent-grid layout math
+  - `theme.py` / `strings.py` / `fonts.py` — colors, localized strings, and fonts (`strings.py` also loads `clock_zones.json`)
   - `paths.py` — path resolution and logging (size-capped rotation)
   - `single_instance.py` — prevents duplicate instances (Win32 mutex)
   - `appconfig.py` — holder for the per-variant values (app name, accent color, version, ...) each variant supplies
@@ -67,13 +74,14 @@ This repository builds two apps -- HoloDeskWidget and its multi-production sibli
   - `profile.py` — app name, accent color, version, etc. handed to `appconfig`
   - `version.py` — version number (shown in the right-click menu)
   - `productions/index.json` / `productions/hololive.json` — the talent list to display (a single hololive production)
+  - `clock_zones.json` — world-clock zone list (label, UTC offset, date field order, Japanese/English region name, with an optional `dst` field for automatic summer-time switching). Hand-edit to add, remove, or relabel zones
   - `docs/Readme.html` / `docs/Readme.en.html` — end-user usage guides (bundled into the release zip)
   - `docs/screenshots/` — screenshots/GIF embedded in the guides above
 - `start_widget_holo.bat` — launcher for the native (Holo) version
 - `build_widget.bat holo|vt` — builds the given variant's exe with PyInstaller
 - `find_python.bat` — shared Python-detection script used by `start_widget_holo.bat`/`build_widget.bat`
 - `release_widget.bat holo|vt` — builds and packages the distributable zip (`release/<AppName>-v<version>.zip`)
-- `tools/capture_screenshots.py` / `capture_screenshots.bat` — developer tool that drives the running widget to re-capture the images/GIF in `variants/holo/docs/screenshots/`
+- `tools/capture_screenshots.py` (launched via `capture_screenshots.bat` at the repository root) — developer tool that drives the running widget to re-capture the images/GIF in `variants/holo/docs/screenshots/`
 
 ## Setup
 
@@ -101,7 +109,7 @@ Extract `release/HoloDeskWidget-v<version>.zip` and double-click `HoloDesk Widge
 
 Current version: **1.0.2**
 
-`__version__` in `variants/holo/version.py` is the single source of truth (it is also shown in the widget's right-click menu). Update this value manually when releasing. `release_widget.bat holo` reads this value, builds the exe via `build_widget.bat holo` (PyInstaller), and packages the exe, `productions/`, and `docs/Readme*.html` into `release/HoloDeskWidget-v<version>.zip`.
+`__version__` in `variants/holo/version.py` is the single source of truth (it is also shown in the widget's right-click menu). Update this value manually when releasing. `release_widget.bat holo` reads this value, builds the exe via `build_widget.bat holo` (PyInstaller), and packages the exe, `productions/`, `clock_zones.json`, and `docs/Readme*.html` into `release/HoloDeskWidget-v<version>.zip`.
 
 ## Release process
 
@@ -109,7 +117,7 @@ Current version: **1.0.2**
    ```bash
    python .claude/skills/release/scripts/bump_version.py holo <old_version> <new_version>
    ```
-2. Run `release_widget.bat holo`. It calls `build_widget.bat holo` (PyInstaller, must be installed) to build `dist/HoloDesk Widget.exe`, then packages the exe, `productions/`, `docs/Readme.html`, and `docs/Readme.en.html` into `release/HoloDeskWidget-v<version>.zip` (runtime-generated files like `settings.json` and logs are excluded). VTDeskWidget follows the same steps with `vt` in place of `holo` (see `.claude/skills/release/SKILL.md`).
+2. Run `release_widget.bat holo`. It calls `build_widget.bat holo` (PyInstaller, must be installed) to build `dist/HoloDesk Widget.exe`, then packages the exe, `productions/`, `clock_zones.json`, `docs/Readme.html`, and `docs/Readme.en.html` into `release/HoloDeskWidget-v<version>.zip` (runtime-generated files like `settings.json` and logs are excluded). VTDeskWidget follows the same steps with `vt` in place of `holo` (see `.claude/skills/release/SKILL.md`).
 3. Distribute the resulting `release/HoloDeskWidget-v<version>.zip`. `build/`, `dist/`, and `release/` are all gitignored.
 
 ## Updating the talent list

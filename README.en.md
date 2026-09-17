@@ -18,7 +18,7 @@ For features, screenshots, setup, and release instructions, see each variant's o
 - `start_widget_holo.py` / `start_widget_vt.py` — each app's launch entry point. `start_widget_holo.bat` / `start_widget_vt.bat` launch them from a development environment.
 - `build_widget.bat holo|vt` / `release_widget.bat holo|vt` — build/release scripts (take the variant name as an argument). See `.claude/skills/release/SKILL.md` for details.
 - `tools/` — developer tooling (currently just the Holo-variant screenshot-capture script).
-- `tests/` — pytest unit tests for `deskwidget_core`'s logic (settings read/write, stream history, talent/production listing, YouTube response parsing, layout math, world-clock DST calculation, and cross-language string consistency). Tkinter rendering and Win32 integration (`widget.py` itself, `rendering.py`, `tray.py`, etc.) are excluded since they're GUI-dependent.
+- `tests/` — pytest unit tests for `deskwidget_core`'s logic (settings read/write, stream history, talent/production listing, YouTube response parsing, layout math, world-clock DST calculation, and cross-language string consistency). Rendering through a live Tk widget and Win32 integration (`rendering.py`, `tray.py`, etc.) are excluded since they're GUI-dependent, but `widget.py`'s own state-transition logic is unit tested through stubs without a live Tk instance.
 
 The two apps are versioned and released independently (`variants/holo/version.py` / `variants/vt/version.py`).
 

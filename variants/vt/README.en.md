@@ -72,8 +72,11 @@ This repository builds two apps -- VTDeskWidget and its single-production siblin
   - `interaction.py` — mouse/keyboard event handling (drag-to-move, resize, click dispatch, slider dragging)
   - `menus.py` — the right-click context menu, theme-color palette, font picker, and production checklist popups
   - `refresh.py` — background refresh (per-talent worker threads, channel resolution, live-status fetching)
+  - `search.py` — the incremental stream-title search logic and the search box's state
   - `grid_layout.py` — geometry/hit-testing that depends on live widget state (window size, selected production, text scale); the production tab strip itself doesn't appear at all for a variant with only one production (HoloDeskWidget)
   - `layout.py` — pure, state-free layout tables for the top-right button row and the production tab strip
+  - `win32.py` — the shared user32/kernel32 ctypes handles and argtypes/restype binding used by `widget.py`/`single_instance.py`/`tray.py`
+  - `entrypoint.py` — the shared startup sequence (checks for duplicate instances → runs the widget's mainloop), called from `start_widget_holo.py`/`start_widget_vt.py`
   - `config.py` — window defaults and `settings.json` read/write
   - `talents.py` — loads `productions/index.json` (the production manifest) and each production's talent-list JSON
   - `youtube.py` — channel resolution and live-status detection (via YouTube's internal innertube API)
@@ -98,7 +101,7 @@ This repository builds two apps -- VTDeskWidget and its single-production siblin
 - `build_widget.bat holo|vt` — builds the given variant's exe with PyInstaller
 - `find_python.bat` — shared Python-detection script used by `start_widget_vt.bat`/`build_widget.bat`
 - `release_widget.bat holo|vt` — builds and packages the distributable zip (`release/<AppName>-v<version>.zip`)
-- `tools/capture_screenshots.py` / `capture_screenshots.bat` — developer tool that drives the running widget to re-capture the images/GIF in `variants/holo/docs/screenshots/` (currently Holo-only)
+- `tools/capture_screenshots.py` (launched via `capture_screenshots.bat` at the repository root) — developer tool that drives the running widget to re-capture the images/GIF in `variants/holo/docs/screenshots/` (currently Holo-only)
 
 ## Setup
 

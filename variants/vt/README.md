@@ -74,8 +74,11 @@ LIVEフィルタ使用時は、配信中のタレントに絞り込んだ上で�
   - `interaction.py` — マウス/キーボードのイベント処理(ドラッグ移動・リサイズ・クリック判定・スライダー操作)
   - `menus.py` — 右クリックメニュー・テーマパレット・フォント選択・プロダクション選択などのポップアップ
   - `refresh.py` — バックグラウンド更新(タレントごとのワーカースレッド起動・チャンネル解決・配信状況取得)
+  - `search.py` — 番組タイトル検索(インクリメンタルサーチ)のロジックと検索ボックスの状態管理
   - `grid_layout.py` — ウィンドウサイズ・選択中プロダクション・文字サイズなど現在の状態に依存するジオメトリ計算とヒットテスト。プロダクションが1つしかないvariant(HoloDeskWidget側)ではタブ列自体が現れません
   - `layout.py` — 状態に依存しない純粋なレイアウト計算(右上ボタン列・プロダクションタブ列の座標テーブル)
+  - `win32.py` — `widget.py`/`single_instance.py`/`tray.py`が共有するuser32/kernel32のctypesハンドルとargtypes/restype紐付けの薄いラッパー
+  - `entrypoint.py` — 多重起動チェック→ウィジェットのmainloop実行という共通の起動シーケンス(`start_widget_holo.py`/`start_widget_vt.py`から呼び出されます)
   - `config.py` — ウィンドウ既定値・`settings.json`の読み書き
   - `talents.py` — `productions/index.json`(プロダクション一覧)と各プロダクションのタレント一覧JSONの読み込み
   - `youtube.py` — チャンネル解決・配信状況の取得(YouTube内部API/innertube経由)
@@ -100,7 +103,7 @@ LIVEフィルタ使用時は、配信中のタレントに絞り込んだ上で�
 - `build_widget.bat holo|vt` — PyInstallerで指定したvariantのexeをビルド
 - `find_python.bat` — `start_widget_vt.bat`/`build_widget.bat`共通のPython検出スクリプト
 - `release_widget.bat holo|vt` — ビルド＋配布用zip(`release/<AppName>-v<version>.zip`)の作成
-- `tools/capture_screenshots.py` / `capture_screenshots.bat` — `variants/holo/docs/screenshots/`内の画像・GIFを実際のウィジェットを操作して再撮影する開発者向けツール(現状Holo variant専用)
+- `tools/capture_screenshots.py`(リポジトリルートの`capture_screenshots.bat`から起動) — `variants/holo/docs/screenshots/`内の画像・GIFを実際のウィジェットを操作して再撮影する開発者向けツール(現状Holo variant専用)
 
 ## セットアップ
 
