@@ -129,7 +129,7 @@ If Windows SmartScreen shows a warning on first launch, choose "More info" → "
 
 ## Version
 
-Current version: **1.0.0**
+Current version: **1.0.2**
 
 `__version__` in `variants/vt/version.py` is the single source of truth (it is also shown in the widget's right-click menu). Update this value manually when releasing.<br>
 `release_widget.bat vt` reads this value, builds the exe via `build_widget.bat vt` (PyInstaller), and packages the exe, the `productions/` folder, `clock_zones.json`, and `docs/Readme*.html` into `release/VTDeskWidget-v<version>.zip`.

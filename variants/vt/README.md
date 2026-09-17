@@ -131,7 +131,7 @@ start_widget_vt.bat
 
 ## バージョン
 
-現在のバージョン: **1.0.0**
+現在のバージョン: **1.0.2**
 
 `variants/vt/version.py` の `__version__` が唯一の管理箇所です(ウィジェットの右クリックメニューにも表示されます)。リリース時はこの値を手動で更新してください。<br>
 `release_widget.bat vt` はこの値を読み取り、`build_widget.bat vt`(PyInstaller)でexeをビルドした上で、exe・`productions/`フォルダ・`clock_zones.json`・`docs/Readme*.html` をまとめた `release/VTDeskWidget-v<version>.zip` を作成します。
