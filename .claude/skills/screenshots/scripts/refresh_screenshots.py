@@ -1,4 +1,4 @@
-"""Refresh HoloDeskWidget's documentation screenshots with the app's default
+"""Refresh a variant's documentation screenshots with the app's default
 settings.json state, then put back whatever settings.json held before.
 
 tools/capture_screenshots.py drives whichever widget instance is already
@@ -19,8 +19,10 @@ docs/Readme*.html actually documents. This wrapper:
 Mirrors how capture_screenshots.py itself covers/uncovers the screen with a
 backdrop window around the shots -- same idea, applied to settings.json.
 
-Windows only, same as capture_screenshots.py. Only targets the Holo variant
-(the only one capture_screenshots.py currently knows how to drive).
+Windows only, same as capture_screenshots.py. Takes an optional variant
+argument ("holo", the default, or "vt") and forwards it to
+capture_screenshots.py, so the same reset-settings/capture/restore-settings
+dance works for either variant's own settings.json.
 """
 
 import ctypes
@@ -34,8 +36,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 
+VARIANT = sys.argv[1] if len(sys.argv) > 1 else "holo"
+if VARIANT not in ("holo", "vt"):
+    raise SystemExit(f"Unknown variant {VARIANT!r} -- expected 'holo' or 'vt'")
+
 from deskwidget_core import appconfig  # noqa: E402
-from variants.holo.profile import PROFILE  # noqa: E402
+
+if VARIANT == "holo":
+    from variants.holo.profile import PROFILE  # noqa: E402
+else:
+    from variants.vt.profile import PROFILE  # noqa: E402
 
 appconfig.configure(PROFILE)
 
@@ -81,16 +91,16 @@ def close_widget_if_running():
     while find_window(WINDOW_TITLE, timeout=0) and time.monotonic() < deadline:
         time.sleep(0.2)
     if find_window(WINDOW_TITLE, timeout=0):
-        print(f"warning: HoloDeskWidget did not close within {CLOSE_TIMEOUT_SECONDS:.0f}s; "
-              f"it may still be running with its own settings, which the next step could "
-              f"end up capturing instead of the defaults")
+        print(f"warning: {appconfig.app_name()} did not close within "
+              f"{CLOSE_TIMEOUT_SECONDS:.0f}s; it may still be running with its own settings, "
+              f"which the next step could end up capturing instead of the defaults")
 
 
 def main():
     if sys.platform != "win32":
         raise SystemExit("This only runs on Windows.")
 
-    print("Closing any already-running HoloDeskWidget instance...")
+    print(f"Closing any already-running {appconfig.app_name()} instance...")
     close_widget_if_running()
 
     backup_dir = Path(tempfile.mkdtemp(prefix="holodesk_settings_backup_"))
@@ -104,7 +114,7 @@ def main():
 
     try:
         print("Capturing with default settings...")
-        subprocess.run([sys.executable, str(CAPTURE_SCRIPT)], cwd=str(ROOT), check=True)
+        subprocess.run([sys.executable, str(CAPTURE_SCRIPT), VARIANT], cwd=str(ROOT), check=True)
     finally:
         print("Closing the widget instance this launched...")
         close_widget_if_running()
