@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HoloDeskWidget のご紹介</title>
+<style>
+  :root {
+    --bg: #fdf6ec;
+    --card-bg: #ffffff;
+    --accent: #ff8fab;
+    --accent-dark: #e8628a;
+    --text: #4a3f35;
+    --text-sub: #8a7b6c;
+    --border: #f0dfc8;
+    --shot-bg: #12141c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Yu Gothic", "Meiryo", "Hiragino Kaku Gothic Pro", sans-serif;
+    line-height: 1.8;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px 60px; }
+
+  header.hero {
+    background: linear-gradient(135deg, #ffe3ec 0%, #fff6e5 100%);
+    padding: 50px 20px 40px;
+    text-align: center;
+    border-bottom: 6px solid var(--accent);
+  }
+  header.hero h1 {
+    font-size: 2.2em;
+    margin: 0 0 8px;
+    color: var(--accent-dark);
+    letter-spacing: 0.02em;
+  }
+  header.hero p.lead {
+    font-size: 1.05em;
+    color: var(--text);
+    max-width: 640px;
+    margin: 0 auto 20px;
+  }
+  header.hero img {
+    width: 220px;
+    max-width: 60%;
+    margin-top: 10px;
+    filter: drop-shadow(0 6px 10px rgba(0,0,0,0.12));
+  }
+
+  /* 実際の画面セクション */
+  .overview {
+    text-align: center;
+    margin: 46px 0 10px;
+  }
+  .overview .shot-frame {
+    display: inline-block;
+    background: var(--shot-bg);
+    padding: 10px;
+    border-radius: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  }
+  .overview .shot-frame img {
+    display: block;
+    max-width: 100%;
+    width: 380px;
+    border-radius: 8px;
+  }
+  .overview .caption {
+    margin-top: 14px;
+    font-size: 0.88em;
+    color: var(--text-sub);
+  }
+  .strip {
+    display: flex;
+    justify-content: center;
+    margin: 22px 0 0;
+  }
+  .strip .shot-frame {
+    background: var(--shot-bg);
+    padding: 8px;
+    border-radius: 12px;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  }
+  .strip .shot-frame img {
+    display: block;
+    max-width: 100%;
+    border-radius: 6px;
+  }
+
+  .notice {
+    background: #fff9ee;
+    border: 1px dashed var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 0.85em;
+    color: var(--text-sub);
+    margin: 30px 0;
+  }
+
+  h2.section-title {
+    text-align: center;
+    font-size: 1.5em;
+    color: var(--accent-dark);
+    margin: 50px 0 30px;
+    position: relative;
+  }
+  h2.section-title::after {
+    content: "";
+    display: block;
+    width: 60px;
+    height: 4px;
+    background: var(--accent);
+    border-radius: 2px;
+    margin: 10px auto 0;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 22px;
+    align-items: stretch;
+  }
+  @media (max-width: 680px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.04);
+  }
+  .card .top {
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+  }
+  .card .icon {
+    flex: 0 0 auto;
+    width: 72px;
+    height: 72px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff6e9;
+    border-radius: 16px;
+  }
+  .card .icon img {
+    max-width: 56px;
+    max-height: 56px;
+    object-fit: contain;
+  }
+  .card .body h3 {
+    margin: 0 0 8px;
+    font-size: 1.05em;
+    color: var(--text);
+  }
+  .card .body p {
+    margin: 0;
+    font-size: 0.9em;
+    color: var(--text-sub);
+  }
+  .card .shot {
+    background: var(--shot-bg);
+    border-radius: 12px;
+    padding: 8px;
+    margin-top: auto;
+  }
+  .card .shot img {
+    display: block;
+    width: 100%;
+    border-radius: 6px;
+  }
+  .card .shot-label {
+    font-size: 0.72em;
+    color: var(--text-sub);
+    text-align: right;
+    margin-top: 6px;
+  }
+
+  .footer-note {
+    margin-top: 60px;
+    text-align: center;
+    font-size: 0.8em;
+    color: var(--text-sub);
+  }
+  .footer-note a { color: var(--accent-dark); }
+
+  .lang-switch {
+    text-align: center;
+    padding: 10px 20px 0;
+    font-size: 0.85em;
+  }
+  .lang-switch a {
+    color: var(--text-sub);
+    text-decoration: none;
+  }
+  .lang-switch a.current {
+    color: var(--accent-dark);
+    font-weight: bold;
+  }
+</style>
+</head>
+<body>
+
+<div class="lang-switch">
+  <a href="index.en.html">English</a> | <a class="current" href="index.html">日本語</a>
+</div>
+
+<header class="hero">
+  <h1>HoloDeskWidget って、こんなアプリ！</h1>
+  <p class="lead">
+    hololive所属タレントの配信状況を、デスクトップの片隅に常時表示できる<br>
+    Windows用の常駐デスクトップウィジェットです。
+  </p>
+  <img src="images/laptop_mascot.png" alt="ノートパソコンのキャラクター">
+</header>
+
+<div class="wrap">
+
+  <div class="overview">
+    <div class="shot-frame">
+      <img src="images/shot_main.png" alt="HoloDeskWidgetの実際の画面">
+    </div>
+    <p class="caption">実際の画面: 配信状況の色分け表示・世界時計を一つのウィンドウにまとめて表示</p>
+
+    <div class="strip">
+      <div class="shot-frame">
+        <img src="images/shot_buttons.png" alt="右上の操作ボタン列">
+      </div>
+    </div>
+    <p class="caption">右上のボタン列からLIVEフィルタ・ダークモード・テーマカラー・言語・最前面固定などをワンクリックで操作</p>
+  </div>
+
+  <h2 class="section-title">できること</h2>
+
+  <div class="grid">
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/vtuber.png" alt="配信状況の表示"></div>
+        <div class="body">
+          <h3>配信状況をひと目で確認</h3>
+          <p>hololive所属タレントの状態を「配信中・待機中・取得エラー」で色分け表示。カードをクリックすれば配信ページやチャンネルページをすぐ開けます。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/laptop_mascot.png" alt="半透明ウィジェット"></div>
+        <div class="body">
+          <h3>デスクトップに常駐する半透明ウィンドウ</h3>
+          <p>いつでも最前面に表示できる透過ウィンドウ。ドラッグで自由に移動、端をつまんでサイズ変更もできます。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/filter.png" alt="LIVEフィルタ"></div>
+        <div class="body">
+          <h3>LIVEフィルタで配信中だけ表示</h3>
+          <p>今まさに配信中のタレントだけに絞り込み。配信タイトルはティッカーで横スクロール表示されます。</p>
+        </div>
+      </div>
+      <div class="shot"><img src="images/shot_live_ticker.gif" alt="LIVEフィルタのティッカー表示のアニメーション"></div>
+      <div class="shot-label">実際の画面（アニメーション）</div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/worldclock.png" alt="世界時計"></div>
+        <div class="body">
+          <h3>世界時計を同時表示</h3>
+          <p>普段よく確認する時刻帯の「今」をまとめて表示。ゾーンの追加・編集も自由自在です。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/palette.png" alt="表示のカスタマイズ"></div>
+        <div class="body">
+          <h3>好みに合わせて見た目を調整</h3>
+          <p>ダーク/ライトモード、テーマカラー、フォント、表示言語（日本語/英語）、透過度や文字サイズまで自由に変更できます。</p>
+        </div>
+      </div>
+      <div class="shot"><img src="images/shot_menu.png" alt="右クリックメニューでのカスタマイズ画面"></div>
+      <div class="shot-label">実際の画面（右クリックメニュー）</div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/floppy.png" alt="設定の自動保存"></div>
+        <div class="body">
+          <h3>設定はすべて自動で保存</h3>
+          <p>ウィンドウの位置・サイズや各種設定は自動保存され、次に起動したときもそのまま復元されます。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="top">
+        <div class="icon"><img src="images/gears.png" alt="チャンネル自動解決"></div>
+        <div class="body">
+          <h3>チャンネルを自動で解決</h3>
+          <p>起動時にhololive公式サイトからチャンネルを自動で調べにいくので、リンク切れが起きにくい仕組みです。</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="notice">
+    ※ 本アプリは個人が制作した非公式のファンメイドツールです。hololive/hololive production・カバー株式会社、その他参照する各タレントとは一切関係がなく、公式の許諾を受けたものではありません。<br>
+    対応OSはWindows専用、インターネット接続が必須です。
+  </div>
+
+  <p class="footer-note">
+    イラスト:「<a href="https://www.irasutoya.com/" target="_blank" rel="noopener">いらすとや</a>」　/　画面キャプチャ: HoloDeskWidget 本体より<br>
+    HoloDeskWidget（MIT License / ソースコードのみ）
+  </p>
+
+</div>
+
+</body>
+</html>
