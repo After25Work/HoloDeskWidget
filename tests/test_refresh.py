@@ -19,6 +19,8 @@ class FakeRefresh(RefreshMixin):
         self.rescheduled = []
         self._refresh_timer_id = None
         self._viewable = viewable
+        self.auto_refresh_paused = False
+        self.cancelled = []
 
     def render(self):
         self.render_calls += 1
@@ -33,6 +35,9 @@ class FakeRefresh(RefreshMixin):
         def after(self, delay_ms, callback):
             self._outer.rescheduled.append((delay_ms, callback))
             return len(self._outer.rescheduled)
+
+        def after_cancel(self, timer_id):
+            self._outer.cancelled.append(timer_id)
 
         def winfo_viewable(self):
             return self._outer._viewable
@@ -73,3 +78,36 @@ def test_refresh_complete_with_stale_selection_kicks_an_immediate_refresh():
     assert widget.render_calls == 0
     assert widget.refresh_calls == 1
     assert widget.rescheduled == []
+
+
+def test_toggle_auto_refresh_pauses_and_cancels_the_pending_timer():
+    widget = FakeRefresh(selected=["a", "b"])
+    widget._refresh_timer_id = 7
+
+    widget.toggle_auto_refresh()
+
+    assert widget.auto_refresh_paused is True
+    assert widget.cancelled == [7]
+    assert widget._refresh_timer_id is None
+    assert widget.render_calls == 1
+    assert widget.refresh_calls == 0
+
+
+def test_toggle_auto_refresh_resuming_refreshes_immediately():
+    widget = FakeRefresh(selected=["a", "b"])
+    widget.auto_refresh_paused = True
+
+    widget.toggle_auto_refresh()
+
+    assert widget.auto_refresh_paused is False
+    assert widget.refresh_calls == 1
+
+
+def test_refresh_complete_while_paused_does_not_reschedule():
+    widget = FakeRefresh(selected=["a", "b"])
+    widget.auto_refresh_paused = True
+
+    widget.refresh_complete(frozenset({"a", "b"}))
+
+    assert widget.rescheduled == []
+    assert widget._refresh_timer_id is None

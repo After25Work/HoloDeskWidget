@@ -139,8 +139,10 @@ SLIDER_HIT_PAD_BOTTOM = 15
 # Vertical room reserved below the talent grid for the refresh button/footer
 # -- shared by compute_grid() (sizing the grid to leave this much room) and
 # widget.py's _fit_height_value() (sizing the window to give the grid that
-# same room back) so the two can't silently drift apart.
-FOOTER_RESERVED_HEIGHT = 90
+# same room back) so the two can't silently drift apart. 35px taller than the
+# refresh button alone would need, to leave room for stop_btn_rect() stacked
+# directly above it.
+FOOTER_RESERVED_HEIGHT = 125
 
 
 class GridMixin:
@@ -306,6 +308,12 @@ class GridMixin:
 
     def refresh_btn_rect(self):
         return (38, self.height - 65, self.width - 44, self.height - 34)
+
+    def stop_btn_rect(self):
+        # Stacked directly above refresh_btn_rect() with the same 4px gap the
+        # rest of the footer uses between rows -- see FOOTER_RESERVED_HEIGHT's
+        # note on the 35px this adds above the refresh button.
+        return (38, self.height - 100, self.width - 44, self.height - 69)
 
     def slider_active(self, key):
         # "幅"/width is the plain grid's column-pitch multiplier -- it has
@@ -982,6 +990,7 @@ class GridMixin:
                 items.append({"kind": "talent", "rect": rect,
                              "activate": lambda t=target: self.open_target(t)})
         items.append({"kind": "button", "rect": self.refresh_btn_rect(), "activate": self.refresh})
+        items.append({"kind": "button", "rect": self.stop_btn_rect(), "activate": self.toggle_auto_refresh})
         return items
 
     def slider_hit(self, x, y):

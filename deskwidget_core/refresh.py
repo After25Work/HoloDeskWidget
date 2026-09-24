@@ -81,6 +81,26 @@ class RefreshMixin:
         except (HTTPError, OSError, ValueError):
             webbrowser.open(youtube.build_search_fallback_url(name), new=2)
 
+    def toggle_auto_refresh(self):
+        # Only gates refresh_complete()'s automatic reschedule below -- a
+        # manual click on the refresh button (or the immediate refresh
+        # restore_from_tray()/a mid-flight selection change triggers) still
+        # runs while paused, since those are explicit user/UI actions, not
+        # the background polling this button is meant to suppress.
+        self.auto_refresh_paused = not self.auto_refresh_paused
+        if self.auto_refresh_paused:
+            if self._refresh_timer_id is not None:
+                self.root.after_cancel(self._refresh_timer_id)
+                self._refresh_timer_id = None
+            self.render()
+        else:
+            # Resuming fetches right away rather than waiting out whatever's
+            # left of the last-scheduled interval, so the panel doesn't sit
+            # on stale data after the user explicitly asked to resume. Also
+            # covers the render() the pause branch above needs for its own
+            # button-state update -- refresh() renders immediately either way.
+            self.refresh()
+
     def refresh(self):
         if self.refresh_in_progress:
             return
@@ -155,12 +175,15 @@ class RefreshMixin:
         if prod_ids == self.selected_productions:
             self.last_updated = time.strftime("%H:%M:%S")
             self.render()
-            # winfo_viewable() is False while withdrawn to the tray (see
-            # minimize_to_tray()) -- slow down to TRAY_REFRESH_INTERVAL_MS
-            # instead of polling everyone in the selected productions at
-            # full speed for nobody to see.
-            interval = REFRESH_INTERVAL_MS if self.root.winfo_viewable() else TRAY_REFRESH_INTERVAL_MS
-            self._refresh_timer_id = self.root.after(interval, self.refresh)
+            # Paused: don't reschedule the automatic cycle at all -- the next
+            # fetch only happens via a manual refresh-button click or
+            # toggle_auto_refresh() resuming it. winfo_viewable() is False
+            # while withdrawn to the tray (see minimize_to_tray()) -- slow
+            # down to TRAY_REFRESH_INTERVAL_MS instead of polling everyone in
+            # the selected productions at full speed for nobody to see.
+            if not self.auto_refresh_paused:
+                interval = REFRESH_INTERVAL_MS if self.root.winfo_viewable() else TRAY_REFRESH_INTERVAL_MS
+                self._refresh_timer_id = self.root.after(interval, self.refresh)
         else:
             # The selection changed while this (now-stale) refresh was still
             # in flight — kick an immediate refresh for whatever's selected

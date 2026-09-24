@@ -268,6 +268,8 @@ class InteractionMixin:
             self.toggle_production_selection(hit_tab["id"])
         elif self._in_rect(event.x, event.y, self.refresh_btn_rect()):
             self.refresh()
+        elif self._in_rect(event.x, event.y, self.stop_btn_rect()):
+            self.toggle_auto_refresh()
         elif self.title_query and self._in_rect(event.x, event.y, self.search_clear_rect()):
             # Only hit-tested while a query is active -- the same rect carries
             # the "filter by stream title" hint text when the field is empty,
@@ -345,6 +347,7 @@ class InteractionMixin:
         elif (self.slider_hit(x, y)
               or any(self._in_rect(x, y, r) for r in self.top_button_rects().values())
               or self._in_rect(x, y, self.refresh_btn_rect())
+              or self._in_rect(x, y, self.stop_btn_rect())
               or (row and row["clickable"])):
             cursor = "hand2"
         else:

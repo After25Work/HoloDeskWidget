@@ -631,12 +631,25 @@ class RenderingMixin:
         updated_text = (self.t("updated", time=self.last_updated) if self.last_updated
                         else self.t("updated_none"))
         updated_font = font(10, True)
-        draw.text((40, self.height - 84), updated_text, font=updated_font,
+        draw.text((40, self.height - 119), updated_text, font=updated_font,
                   fill=self.text_color(colors["muted"]))
         version_text = f"v{appconfig.version()}"
         version_bbox = updated_font.getbbox(version_text)
-        draw.text((self.width - 40 - version_bbox[2], self.height - 84), version_text,
+        draw.text((self.width - 40 - version_bbox[2], self.height - 119), version_text,
                   font=updated_font, fill=self.text_color(colors["muted"]))
+        stop_rect = self.stop_btn_rect()
+        # Paused reads as an accented "this is toggled on" state, the same
+        # treatment draw_fullscreen_button() gives its own active state --
+        # not the dimmed/disabled look refresh_in_progress uses below, since
+        # the button stays just as clickable while paused, it just does the
+        # opposite thing.
+        stop_fill = (self.accent_color() if self.auto_refresh_paused
+                    else self.background_color(colors["neutral_btn"]))
+        stop_text_color = (self.text_color((24, 24, 31)) if self.auto_refresh_paused
+                           else self.text_color(colors["text"]))
+        draw.rounded_rectangle(stop_rect, 7, fill=stop_fill)
+        stop_label = self.t("resume_auto") if self.auto_refresh_paused else self.t("pause_auto")
+        self.draw_centered(draw, stop_rect, stop_label, font(13, True), stop_text_color)
         refresh_rect = self.refresh_btn_rect()
         # While a refresh is in flight, dim the button and swap its label to
         # "Refreshing…" so clicking it again (already a silent no-op — see

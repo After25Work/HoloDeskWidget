@@ -68,6 +68,11 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.ticker_last_tick = time.time()
         self.last_opened = (None, 0.0)
         self.refresh_in_progress = False
+        # Toggled by the footer's pause/resume button (see
+        # RefreshMixin.toggle_auto_refresh()) -- only suppresses the
+        # automatic 180s-cycle reschedule in refresh_complete(); a manual
+        # click on the refresh button still runs while paused.
+        self.auto_refresh_paused = False
         # The id `root.after()` handed back for the next scheduled refresh()
         # call -- restore_from_tray() cancels it before forcing an immediate
         # refresh, so minimizing/restoring never leaves two independent
