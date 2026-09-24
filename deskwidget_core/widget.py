@@ -68,6 +68,12 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
         self.ticker_last_tick = time.time()
         self.last_opened = (None, 0.0)
         self.refresh_in_progress = False
+        # The id `root.after()` handed back for the next scheduled refresh()
+        # call -- restore_from_tray() cancels it before forcing an immediate
+        # refresh, so minimizing/restoring never leaves two independent
+        # refresh timer chains running at once (see refresh.py's
+        # TRAY_REFRESH_INTERVAL_MS note).
+        self._refresh_timer_id = None
         settings = self._load_settings()
         self._init_window(settings)
         self._schedule_startup()
@@ -291,6 +297,16 @@ class LayeredWidget(RenderingMixin, GridMixin, MenuMixin, InteractionMixin, Refr
 
     def restore_from_tray(self):
         self.root.deiconify()
+        # Cancel whatever refresh was scheduled while minimized (it was
+        # scheduled at the slower TRAY_REFRESH_INTERVAL_MS cadence -- see
+        # refresh.py) and force an immediate one instead, so the panel
+        # doesn't show up-to-10-minutes-stale data right after being
+        # restored. Cancelling first keeps this from ever running alongside
+        # that old timer as a second, permanently-parallel refresh loop.
+        if self._refresh_timer_id is not None:
+            self.root.after_cancel(self._refresh_timer_id)
+            self._refresh_timer_id = None
+        self.refresh()
         # deiconify() alone just unhides the window -- it doesn't reliably
         # bring it above every other app's windows or give it real input
         # focus (Tk's lift()/focus_force() are both requests Windows is free

@@ -39,7 +39,19 @@ REOPEN_DEBOUNCE_SECONDS = 0.5
 # drains a queue instead of one thread per talent.
 MAX_REFRESH_WORKERS = 12
 # How often refresh_complete() reschedules the next automatic refresh.
-REFRESH_INTERVAL_MS = 60_000
+# Kept well above a "check every minute" cadence because total network use
+# scales with talent count x this frequency -- with hundreds of talents
+# selected (e.g. the VT variant's "All" tab) a 60s interval adds up fast for
+# an app that's meant to sit running in the background all day. 180s trades
+# a bit of live-detection latency for roughly a third of the request volume.
+REFRESH_INTERVAL_MS = 180_000
+# Interval used instead, while the window is withdrawn to the tray (see
+# widget.py's minimize_to_tray()/restore_from_tray()): nobody's looking at
+# the panel, so there's no reason to keep polling every talent in the
+# selected productions at full speed. restore_from_tray() cancels whatever
+# tray-paced refresh is still pending and forces an immediate one, so this
+# only costs staleness while actually minimized, never on the way back.
+TRAY_REFRESH_INTERVAL_MS = 600_000
 
 
 class RefreshMixin:
@@ -143,7 +155,12 @@ class RefreshMixin:
         if prod_ids == self.selected_productions:
             self.last_updated = time.strftime("%H:%M:%S")
             self.render()
-            self.root.after(REFRESH_INTERVAL_MS, self.refresh)
+            # winfo_viewable() is False while withdrawn to the tray (see
+            # minimize_to_tray()) -- slow down to TRAY_REFRESH_INTERVAL_MS
+            # instead of polling everyone in the selected productions at
+            # full speed for nobody to see.
+            interval = REFRESH_INTERVAL_MS if self.root.winfo_viewable() else TRAY_REFRESH_INTERVAL_MS
+            self._refresh_timer_id = self.root.after(interval, self.refresh)
         else:
             # The selection changed while this (now-stale) refresh was still
             # in flight — kick an immediate refresh for whatever's selected
