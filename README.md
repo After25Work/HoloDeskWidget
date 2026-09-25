@@ -11,6 +11,13 @@ VTuberタレントの配信状況を常時表示するWindowsデスクトップ�
 
 機能・スクリーンショット・セットアップ手順・リリース手順など、アプリとしての詳細はそれぞれのREADME(上表のリンク先)を参照してください。このファイルはリポジトリ全体の構成のみを説明します。
 
+<p align="center">
+  <img src="variants/holo/docs/screenshots/main.png" width="320" alt="HoloDeskWidget メイン画面">
+  <img src="variants/vt/docs/screenshots/main.png" width="320" alt="VTDeskWidget メイン画面">
+</p>
+
+<p align="center"><sub>左: HoloDeskWidget(hololiveのみ) / 右: VTDeskWidget(複数プロダクションをタブ切替)</sub></p>
+
 ## 構成
 
 - `deskwidget_core/` — 両アプリ共通のエンジンパッケージ。プロダクションが1つしかないvariant(Holo)では、複数プロダクション向けのタブ切替UI(タブ列・プロダクション選択ボタン)は自動的に現れません。

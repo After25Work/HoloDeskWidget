@@ -11,6 +11,13 @@ A monorepo that builds two Windows desktop widgets -- each keeping VTuber talent
 
 For features, screenshots, setup, and release instructions, see each variant's own README (linked above). This file only describes the overall repository layout.
 
+<p align="center">
+  <img src="variants/holo/docs/screenshots/main.png" width="320" alt="HoloDeskWidget main screen">
+  <img src="variants/vt/docs/screenshots/main.png" width="320" alt="VTDeskWidget main screen">
+</p>
+
+<p align="center"><sub>Left: HoloDeskWidget (hololive only) / Right: VTDeskWidget (multiple productions, switchable by tab)</sub></p>
+
 ## Structure
 
 - `deskwidget_core/` — the engine package shared by both apps. A variant with only one production (Holo) never shows the multi-production tab-switching UI (tab strip, productions picker button) at all -- it's driven entirely by how many productions that variant's data ships.
