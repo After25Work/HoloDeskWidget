@@ -16,6 +16,7 @@ A Windows desktop widget that keeps the live-stream status of VTuber talents vis
 - **Live-status overview**: Shows each registered talent's status (live / idle / fetch error) as color-coded cards.<br>
   Clicking a card opens that talent's live stream in your browser (or their channel page if they're not live).<br>
   Right-clicking a card brings up a menu to copy the talent's name or stream title to the clipboard.
+- **Pause/resume auto-refresh**: A button above the refresh button pauses or resumes the 180-second automatic refresh cycle. Manual refresh still works while paused, and resuming fetches the latest status immediately.
 - **Always-on-top, semi-transparent desktop widget**: A persistent, transparent window you can drag by its background to move, and drag by its edges/corners to resize.
 - **LIVE filter**: Narrows the list down to only the talents currently live, and shows their stream titles as a scrolling ticker.
 - **Stream-title search (incremental)**: Type in the search box below the sliders and the list narrows to matching stream titles as you type (case-insensitive). While a filter is active each matching talent's stream title is shown beside their name and the status bar switches to a "matched" count. `Ctrl+F` jumps to the box; `Esc` or the × button beside it clears the filter.
@@ -129,7 +130,7 @@ If Windows SmartScreen shows a warning on first launch, choose "More info" → "
 
 ## Version
 
-Current version: **1.0.2**
+Current version: **1.1.0**
 
 `__version__` in `variants/vt/version.py` is the single source of truth (it is also shown in the widget's right-click menu). Update this value manually when releasing.<br>
 `release_widget.bat vt` reads this value, builds the exe via `build_widget.bat vt` (PyInstaller), and packages the exe, the `productions/` folder, `clock_zones.json`, and `docs/Readme*.html` into `release/VTDeskWidget-v<version>.zip`.
